@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+.tmp/
+.env
+.env.*
+*.log
+.DS_Store
+.pytest_cache/
+.venv/
+__pycache__/
+.mypy_cache/
+playwright-report/
+artifacts/

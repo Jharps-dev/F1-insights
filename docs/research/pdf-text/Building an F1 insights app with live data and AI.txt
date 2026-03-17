@@ -1,0 +1,842 @@
+Building an F1 insights app with live data and AI
+Executive summary
+A credible “F1 insights” app is primarily a data-licensing and real-time engineering problem; the AI
+layer only becomes trustworthy once the ingest layer is stable, time-aligned, and legally usable. “Live”
+F1 data seen on consumer products is typically delivered via SignalR streams (and/or “jsonStream”
+incremental files) and can change without notice, as evidenced by ecosystem breakages (e.g., the live
+timing endpoint switching to SignalR Core and channels intermittently disappearing). 1
+
+
+From a practical build standpoint in March 2026, the most productive and reputable community on-
+ramps are:
+- OpenF1 for telemetry/timing from 2023 onwards with clear JSON/CSV outputs, explicit sampling-rate/
+refresh guidance, documented auth for real-time streaming (MQTT/WebSocket), and stated non-
+commercial intent/licence. 2
+- FastF1 for analysis-friendly dataframes and tooling, plus a maintained pathway for recording live
+sessions (but—with modern FastF1—live timing use can require an active F1TV subscription and a
+specific authentication workflow). 3
+- Jolpica (Ergast-compatible) for historical results/standings-style queries under explicit non-
+commercial terms and rate limits; this matters because the original Ergast endpoint has been
+deprecated and, as of now, the ergast.com domain is no longer serving the API content. 4
+
+
+For production/commercial ambitions, you should assume you’ll need a licensed provider (e.g.,
+Sportradar markets “official F1 data” for betting customers, typically sold via enterprise contracts),
+because Formula 1 website legal notices explicitly treat “Results and Timing Data” as protected and
+restrict reproduction/commercial use (including via scraping). 5
+
+
+Data sources and trackers
+The landscape splits into: (a) official/primary publications, (b) community/open aggregators/
+wrappers, and (c) licensed commercial feeds. The table below focuses on sources and trackers
+commonly used by developers building live dashboards, strategy tools, and analysis pipelines.
+
+
+
+
+                                                   1
+Comparison table of top sources and trackers
+
+ Source /                              Typical                                           Access            Licence / ToU
+                              Live?                        Data types (examples)
+ tracker                               latency                                           method            highlights
+
+                                                                                                           Formula 1
+                                                                                                           legal notices/
+                                                                                                           terms restrict
+                                                                                         SignalR /
+                                                                                                           reproduction/
+                                                           Timing, telemetry             SignalR Core;
+ Formula 1 live                                                                                            commercial
+                                                           channels (e.g.,               plus static                        N
+ timing stream                         Near real-                                                          use of
+                                Yes                         CarData.z ,                   json +                            pr
+ (consumer-                            time (varies)                                                       timing/
+                                                           Position.z ), race            jsonStream
+ facing feed)                                                                                              results data
+                                                           control, weather              files for
+                                                                                                           and prohibit
+                                                                                         sessions
+                                                                                                           certain
+                                                                                                           automated
+                                                                                                           uses.
+
+                                                                                                           PDFs may
+                                                                                                           include “no
+                             “Quasi-
+ FIA                                                       Official PDFs:                                  reproduction”
+                   live” (published    Minutes to                                        Web/PDF
+ documents &                                               classifications, decisions,                     style notices;
+                       during/after    hours                                             downloads
+ classifications                                           notes                                           content is
+                           sessions)
+                                                                                                           official/
+                                                                                                           authoritative.
+
+                                                                                                           Not
+                                                                                                           positioned as
+                                                                                                           a developer
+                                                                                                           API with
+ API-style FIA                                                                                             explicit
+                                                                                         Web
+ endpoints                                                 Event/timing “archive”-                         commercial
+                            Partial    Variable                                          endpoints
+ (archives/                                                style pages                                     licence in the
+                                                                                         (api.fia.com)
+ results pages)                                                                                            surfaced
+                                                                                                           pages; treat
+                                                                                                           as governed
+                                                                                                           by FIA site
+                                                                                                           terms.
+
+                                                                                                           CC BY‑NC‑SA
+                                                                                                           4.0; intended
+                                                                                                           for non-
+                                                           Telemetry ( car_data          REST (JSON/
+                                                                                                           commercial
+                                       ~3 seconds          ~3.7 Hz), location (~3.7      CSV); real-time
+ OpenF1                                                                                                    use/
+                        Yes (paid),    quoted for          Hz), weather (every           streaming via                      (h
+ (community                                                                                                engagement;
+                    historical free    real-time           minute), positions, laps,     MQTT/
+ API)                                                                                                      real-time
+                                       updates             race control, team radio      WebSocket
+                                                                                                           requires
+                                                           links                         with OAuth2
+                                                                                                           subscription;
+                                                                                                           rate limits
+                                                                                                           published.
+
+
+
+
+                                                       2
+Source /                           Typical                                          Access           Licence / ToU
+                          Live?                       Data types (examples)
+tracker                            latency                                          method           highlights
+
+                                                                                                     MIT for code;
+                                   Live                                             Python           live timing
+                                   depends on                                       library; live    client may
+                  Live capture
+                                   feed; post-        Timing, telemetry, results;   timing client    require F1TV
+FastF1              supported;
+                                   session            outputs as pandas             records raw      subscription/
+(library)        most use post-
+                                   depends on         dataframes                    stream,          auth;
+                  session data
+                                   file                                             processed        caching/rate
+                                   availability                                     later            limiting built-
+                                                                                                     in. 10
+
+                                                                                                     Data CC
+                                                                                                     BY‑NC‑SA 4.0;
+                                                                                                     non-
+                                                                                    REST
+Jolpica                                                                                              commercial;
+                                                      Results/standings/laps-       endpoints
+(Ergast-         No (historical)   N/A                                                               explicit rate
+                                                      style historical data         (Ergast-                           co
+compatible)                                                                                          limits (e.g., 4
+                                                                                    compatible)
+                                                                                                     rps burst,
+                                                                                                     500/hr
+                                                                                                     unauth). 12
+
+                                                                                                     Site terms
+                                                                                                     prohibit
+                                                                                                     reproduction
+                                                                                    Website          outside
+RaceFans
+                 Not live (post-                      Lap charts/times/tyres/pit    pages            copyright
+“interactive                       N/A
+                 race content)                        stops in article form         (human-          notice; no
+data” pages
+                                                                                    facing)          official API is
+                                                                                                     advertised on
+                                                                                                     the surfaced
+                                                                                                     pages. 14
+
+                                                                                                     GPL-3.0-only
+                                                                                    Open-source      for the app;
+                                   Stream-                                          app              depends on
+                                   dependent;         Timing tower, strategy        consuming        upstream
+Undercutf1
+                            Yes    supports           pages, race control, driver   live timing      feed
+(TUI tracker)
+                                   delay              tracker                       feed; records/   availability
+                                   alignment                                        replays          and rights
+                                                                                    sessions         constraints.
+                                                                                                      16
+
+
+                                                                                                     Open-source;
+                                                                                                     explicitly
+                                   Stream-            Subscribes to named
+OpenF1.Data /                                                                       SignalR          “unofficial”;
+                                   dependent;         topics incl. TimingData ,
+open-f1                                                                             connection;      documents
+                            Yes    supports           RaceControlMessages ,
+console (live                                                                       records and      topic
+                                   user-set           CarData.z ,
+timing client)                                                                      replays          subscriptions
+                                   delay              Position.z
+                                                                                                     and replay
+                                                                                                     format. 18
+
+
+
+
+                                                  3
+  Source /                              Typical                                      Access            Licence / ToU
+                                Live?                     Data types (examples)
+  tracker                               latency                                      method            highlights
+
+                                                                                                       Markets
+                                                                                                       “official F1
+  Sportradar                                                                                           data” and live
+   20 (licensed                         Commercial-       Official data products     Enterprise        data “direct
+                                 Yes
+  provider                              grade             (market dependent)         feeds/APIs        from the
+  example)                                                                                             track” (sales-
+                                                                                                       led licensing).
+                                                                                                           21
+
+
+
+
+Open-source trackers worth studying for product patterns
+
+The tracker projects are valuable less for their UI and more for their data normalisation decisions:
+delay alignment to broadcast, session replay tooling, and derived metrics (pit windows, tyre age, delta
+pages). Undercutf1 explicitly implements variable delay and replay; OpenF1.Data lists the topic
+taxonomy it subscribes to; and FastF1 provides a well-used analysis interface with caching and
+structured objects. 23
+
+
+Access methods, latency, and data schemas
+
+Real-time access patterns and latency realities
+
+A robust “live” layer is typically built around four acquisition modes:
+
+
+1) Push streaming (preferred)
+SignalR is used by multiple live timing clients; OpenF1 supports live streaming via MQTT/WebSocket
+when authenticated. 24
+
+
+2) HTTP incremental streams (“jsonStream” files)
+A published feed catalogue (community-discovered) describes per-topic pairs of         KeyFramePath
+(snapshot JSON) and StreamPath (incremental jsonStream). This is a common “event-sourcing by file
+append” pattern: take the keyframe, then apply deltas.     25
+
+
+
+
+3) REST polling (acceptable for non-live and low-frequency axes)
+OpenF1’s historical endpoints are unauthenticated and return JSON/CSV; weather is updated “every
+minute” per docs. 26
+
+
+4) Scraping (last resort; highest legal and operational risk)
+Formula 1 legal notices explicitly restrict commercial use/reproduction of timing data and mention
+scraping in the timing-data context; RaceFans terms likewise prohibit reproduction outside its copyright
+rules. 27
+
+
+Latency-wise: OpenF1 states real-time data “typically updates about 3 seconds after live events.”
+Separately, live broadcast delay is commonly ~30–60 seconds in many consumer contexts, which is why
+some live timing clients implement user-adjustable delay for alignment. 28
+
+
+
+
+                                                      4
+Data formats encountered in F1 insight builds
+
+In practice you will handle at least these payload styles:
+
+
+      • JSON / CSV: OpenF1 explicitly supports JSON and CSV; Jolpica and similar historical APIs use
+        JSON; analytics exports often become CSV/parquet. 29
+      • “JSON-like” stream messages: Certain live timing stream payloads have historically contained
+        non-JSON tokens (e.g., single quotes and True/False that must be normalised before JSON
+       parsing in one FastF1 SignalR processing path).       30
+
+      • Compressed channel payloads: Topic names like CarData.z / Position.z strongly
+        suggest compressed content in-channel, and they are treated as distinct topics by multiple
+        clients. 31
+      • Binary telemetry (non-F1-live-timing): If you expand beyond “real F1” into simulation for
+        training, game telemetry often arrives as UDP binary packets (useful for synthetic data
+        generation, but not identical to F1 live timing). 32
+
+Sample “canonical event” schema
+
+A core architectural decision is to define a canonical schema so every upstream source maps into one
+internal representation (even if sparse). The key is time alignment: event_time_utc , session_key ,
+driver_id , plus source and ingest_time_utc .
+
+
+
+  {
+      "schema_version": "1.0",
+      "source": "openf1|fastf1|fia_pdf|licensed_provider",
+      "ingest_time_utc": "2026-03-16T12:34:56.789Z",
+      "event_time_utc": "2026-03-16T12:34:54.123Z",
+      "meeting_key": 1276,
+      "session_key": 9839,
+      "driver": { "driver_number": 44, "driver_code": "HAM" },
+      "event_type": "telemetry|timing|position|race_control|weather|radio",
+      "payload": { }
+  }
+
+
+To support high-rate telemetry, you typically add an internal timeseries table keyed by
+ (session_key, driver_number, event_time) with typed columns (e.g., speed , throttle ,
+brake ,    n_gear ,      rpm ), matching well-documented upstream attributes such as OpenF1’s
+car_data output.      33
+
+
+
+
+Example API call patterns
+
+OpenF1 exposes direct REST calls (JSON default, csv=true for CSV) and publishes sample curls for
+telemetry and weather.     34
+
+
+
+
+  # OpenF1 telemetry sample (car_data)
+  curl "https://api.openf1.org/v1/car_data?
+  driver_number=55&session_key=9159&speed>=315"
+
+  # OpenF1 weather sample (updated every minute per docs)
+
+
+
+
+                                                     5
+  curl "https://api.openf1.org/v1/weather?
+  meeting_key=1208&wind_direction>=130&track_temperature>=52"
+
+
+
+  # FastF1 (post-session) pattern: load a session then pull laps/telemetry
+  import fastf1
+  fastf1.Cache.enable_cache(".cache/fastf1") # caching is default &
+  recommended
+  session = fastf1.get_session(2026, "Chinese Grand Prix", "R")
+  session.load()
+  laps = session.laps
+
+
+
+  # Jolpica (Ergast-compatible) base is documented in the repo README
+  # Example shape: http://api.jolpi.ca/ergast/f1/{season}/{round}/results.json
+
+
+(Use FastF1’s documented cache/rate-limit facilities rather than blasting endpoints; FastF1 routes
+requests through a caching + rate limiting layer specifically to reduce rate-limit risk. 35 )
+
+
+Licensing, legal, and compliance constraints
+
+Why licensing is the main blocker for a “real” product
+
+Formula 1’s own legal notices emphasise that “Statistics, Results and Timing Data” is protected by
+copyright and database rights and restricts reproduction/commercial use, explicitly referencing
+scraping as a prohibited mechanism in that context. 36
+
+
+Additionally, F1TV subscription terms restrict use to personal/non-commercial viewing contexts and
+include anti-circumvention / no infringement style obligations; practically, this means “build an app”
+must distinguish between internal/personal tooling vs a redistributable product. 37
+
+
+RaceFans’ site terms also state that material is owned/licensed and “Reproduction is prohibited” except
+under its copyright notice, which makes it unsuitable as a raw data backend unless you have
+permission. 15
+
+
+Community/open licences and constraints you can actually build on
+
+OpenF1 states it is licensed under CC BY‑NC‑SA 4.0 and positions the platform for “non-commercial
+analysis and fan engagement,” with historical data free (2023+) and real-time requiring a paid
+subscription. 38
+
+
+Jolpica’s terms likewise state free/non-commercial use, data licensed under CC BY‑NC‑SA 4.0, and
+explicit rate limits (unauth burst 4 rps; sustained 500/hr). 39
+
+
+FastF1’s code is MIT licensed, but its live timing client may require an active F1TV subscription and a
+specific authentication/add-on flow; this is a key signal that the ecosystem is moving towards stronger
+gating for “live.” 40
+
+
+
+
+                                                  6
+Practical compliance posture: three tiers
+
+Baseline (personal / research / internal demo)
+Use OpenF1 (non-commercial), Jolpica (non-commercial), and FIA PDFs for verification, and keep the app
+non-monetised. Enforce rate limits, caching, and an attribution panel. 41
+
+
+Better (commercial-ready architecture, non-commercial data)
+Design the pipeline and UI for “replaceable data adapters,” but run it on OpenF1/Jolpica during
+development only. Add a “data provider abstraction contract” so you can swap in a licensed provider
+without rewriting analytics. 42
+
+
+Visionary (commercial product)
+Plan to license official data via an enterprise provider pathway (Sportradar markets “official F1 data” for
+betting customers and positions its feed as live and direct-from-track). 21
+
+
+AI and analytics feature design
+The AI layer needs to be grounded in what fields exist, at what cadence, and with what gaps.
+OpenF1 provides concrete sampling/refresh characteristics for telemetry, location, and weather, plus
+race control and team radio links—enough to support real-time analytics if you define tight SLAs around
+“missingness.” 43
+
+
+Below are concrete features, with model families, data requirements, and evaluation metrics. Where
+possible, proposals align with published F1-strategy modelling research and common motorsport
+analytics approaches. 44
+
+
+Telemetry anomaly detection
+
+What it does: Detect unusual driver/car behaviour (lift-and-coast onset, brake migration, sensor
+dropouts, sudden pace loss) from telemetry and timing changes.
+
+
+Inputs: high-rate telemetry (speed/throttle/brake/gear/RPM), lap context (sector boundaries, mini-
+sectors if available), and track status/race control for confounders like yellow flags. OpenF1’s
+ car_data telemetry fields and race control messages support this. 45
+
+
+Models (choose based on labels availability):
+- Unsupervised: robust z-score + STL decomposition; isolation-style trees; autoencoder on normalised
+traces.
+- Weakly supervised: change-point detection with pseudo-labels generated from deltas in lap-time
+residuals.
+
+
+Metrics: Precision/recall for known incidents; time-to-detect; false positives per lap; stability under
+safety-car segments.
+
+
+Real-time considerations: must run as streaming features with bounded state (e.g., last N seconds);
+degrade gracefully when channels drop (which has occurred for some live topics). 46
+
+
+
+
+                                                    7
+Stint performance modelling and tyre degradation
+
+What it does: Estimate pace evolution by stint, normalise for fuel burn, traffic, and track evolution;
+forecast “cliff” risk.
+
+
+Inputs: lap times, tyre compound/age (from timing app data or derived), weather and track status;
+OpenF1 advertises lap times and tyre/pit-related endpoints plus weather every minute. 47
+
+
+Models: hierarchical regression (driver/team random effects), GAMs for non-linear degradation,
+Bayesian state-space models to separate latent pace from noise. Bayesian modelling is used in
+published F1 results analysis literature, and deep learning has been explored for decision support in pit/
+strategy contexts. 48
+
+
+Metrics: MAE/RMSE on lap-time forecasts; calibration (prediction intervals); decision quality (e.g., did
+model correctly rank undercut windows).
+
+
+Real-time considerations: track evolution is regime-shifting; incorporate track status/race control flags
+to avoid poisoning the fit. 45
+
+
+Pit-stop strategy optimisation
+
+What it does: Recommend pit windows, undercut/overcut probability, safety-car sensitivity, and
+“commit now vs hold” decisions.
+
+
+Inputs: current gaps/intervals, tyre age/compound, pace model, pit lane loss estimates, and race
+control status.
+
+
+Approaches:
+- Simulation-based: Monte Carlo race evolution with stochastic safety car.
+- Optimisation: dynamic programming / shortest path over lap states.
+- Learning-based: deep models for pit stop decision support have been published in motorsport
+contexts (decision-support framing). 49
+
+
+Metrics: regret vs realised strategy outcome; top-k success rate for pit window suggestions; stability
+(avoid oscillating recommendations).
+
+
+Real-time considerations: needs fast inference; precompute pit-loss baselines per circuit/session;
+cache and update only deltas.
+
+
+Driver similarity and “style fingerprints”
+
+What it does: Cluster drivers by braking/turn-in/throttle application patterns per corner class; compare
+teammates; detect adaptation with setup changes.
+
+
+Inputs: corner-segmented telemetry, track map segmentation, and consistent normalisation (speed
+range, tyre state).
+
+
+Models: representation learning (contrastive embeddings), DTW-based distances, or graph models over
+circuit segments.
+
+
+
+
+                                                    8
+Metrics: retrieval metrics (does the nearest-neighbour set match expert intuition?); stability across
+sessions; separation between drivers of different styles.
+
+
+Predictive race outcome and live win probability
+
+What it does: Live probability of finishing positions, safety car impact, and overtake likelihood.
+
+
+Inputs: current position, gaps, pace model residuals, stint state, incidents; OpenF1 provides positions
+and race control messages; FIA documents provide authoritative classification/penalty artefacts post-
+event for evaluation. 50
+
+
+Models: survival/hazard models for incidents; gradient boosting for overtakes; Bayesian updating for
+win probability.
+
+
+Metrics: Brier score / log loss; calibration curves; sharpness; backtest across seasons.
+
+
+Commentary summarisation and highlight generation
+
+What it does: Extract and summarise “why” moments (strategy pivots, incidents) and generate
+highlight clips (non-video: highlight events; video requires additional rights).
+
+
+Inputs: race control messages, position changes, pit stops, and optionally team radio links. OpenF1’s
+race control output is structured and includes the incident message text and metadata; OpenF1 also
+exposes team radio recording URLs in its API output. 45
+
+
+Models:
+- NLP summarisation: LLM with retrieval (RAG) over structured event timeline.
+- Highlight scoring: rule + ML ranker over “event salience” (position delta, safety car, pit delta).
+
+
+Metrics: human eval (pairwise preference), factuality checks against event data, latency to publish.
+
+
+Real-time considerations: keep LLM calls bounded (batch by minute); pre-compile structured “incident
+cards” so the model isn’t reasoning from raw streams.
+
+
+Reference architecture options
+A winning architecture is one where the data adapters are swappable, because the licensing/product
+direction may force you to replace your upstream source later. The SignalR topic universe and the
+“keyframe + jsonStream” feed catalogue provide a workable canonical ingestion model: snapshot →
+apply deltas → emit normalised events.      51
+
+
+
+
+Baseline architecture
+
+      • Ingest: REST polling (OpenF1 historical) + optional live streaming (OpenF1 authenticated).     52
+
+      • Storage: Postgres for relational + object storage for raw JSON/CSV captures.
+      • Cache: Redis for current session state (timing tower).
+      • Serving: single API (FastAPI/Node) + WebSocket to clients.
+
+Best for: MVP and research; simplest ops.
+
+
+
+
+                                                       9
+Better architecture
+
+     • Ingest: stream-first (MQTT/WebSocket from OpenF1; optionally FastF1 recording for redundancy
+       where permitted). 53
+     • Stream processing: Kafka/Redpanda + Flink/Spark streaming for stateful aggregates (intervals,
+       pit windows).
+     • Storage: columnar analytics store (ClickHouse) + time-series store (InfluxDB/Timescale) for
+       telemetry; undercutf1-like projects demonstrate practical live UX semantics and replay logs. 54
+     • Model serving: separate inference service with feature store and low-latency caching.
+
+Best for: multi-user live dashboards, near-real-time alerts.
+
+
+Visionary architecture
+
+     • Provider abstraction: contracts for “licensed provider” integration; treat community sources as
+       dev-only. 55
+     • Multi-tenant: per-user rate limits, paid tiers, and workload isolation.
+     • Observability: per-topic completeness SLAs (detect when CarData.z disappears, etc.), because
+       upstream churn is real.   46
+
+
+
+
+  flowchart LR
+    subgraph Sources
+      A[OpenF1 REST/CSV JSON] --> I
+      B[OpenF1 MQTT/WebSocket (auth)] --> I
+      C[FIA PDFs / Decisions] --> P
+      D[Historical results (Jolpica)] --> I
+      E[Licensed provider] --> I
+    end
+
+    subgraph Ingest
+      I[Ingestion adapters\n(rate limit + retries + schema mapping)] -->
+  Q[(Event log / raw store)]
+      P[PDF fetch + parse + validate] --> Q
+    end
+
+     subgraph Processing
+       Q --> S[Stream processor\n(stateful session model)]
+       S --> R[(Realtime cache)]
+       S --> W[(Warehouse / analytics DB)]
+       S --> F[Feature builder]
+       F --> M[Model serving]
+     end
+
+     subgraph Serving
+       R --> API[App API + WebSocket]
+       W --> API
+       M --> API
+       API --> UI[Web/mobile dashboard]
+     end
+
+
+
+
+                                                    10
+MVP roadmap and estimated effort
+This roadmap assumes open-ended platform/budget, but is structured so you can pivot from
+community data to licensed feeds without rewriting the whole stack. The key deliverable every
+milestone should include is an end-to-end replay mode, because replay is how you test
+deterministically and how projects like open-f1 and undercutf1 accomplish development without live
+sessions. 56
+
+
+Milestones, deliverables, and effort bands
+
+Baseline MVP (single builder, ~6–10 weeks)
+- Data adapters: OpenF1 REST for sessions/laps/telemetry + Jolpica for schedule/standings; canonical
+schema and raw event log. 57
+- Session replay: store raw pulls and replay into the same pipeline. (OpenF1.Data and undercutf1
+patterns validate this approach.) 56
+- UI: timing tower + positions + stint chart + race control feed cards. 58
+- First analytics: stint pace model + pit window heuristic + anomaly flags.
+- Guardrails: explicit “non-commercial / attribution / provider ToU” banner + rate limiting and caching.
+ 59
+
+
+
+
+Better MVP (small team, ~10–16 weeks)
+- Live mode: OpenF1 authenticated streaming via MQTT/WebSocket; websocket push to clients. 60
+- Data quality: completeness dashboards per endpoint; drift detection for schema changes (OpenF1
+issues show real taxonomy drift). 61
+- ML: calibrated win-probability model and a pit-strategy simulator validated on historical seasons. 62
+
+
+Visionary (commercial, ~4–9 months depending on licensing)
+- Contracted data feed integration (e.g., Sportradar-style official offering) and SLA-backed uptime. 21
+- Security, privacy, and legal review aligned to Formula 1 restrictions on timing/results data
+reproduction. 63
+- Enterprise-scale multi-tenant infra, billing, and content moderation for community features.
+
+
+
+  gantt
+    title MVP timeline (indicative)
+    dateFormat YYYY-MM-DD
+    axisFormat %d %b
+
+
+      section Foundations
+      Canonical schema + event log               :a1, 2026-03-17, 10d
+      Replay harness + test fixtures             :a2, after a1, 10d
+
+      section Data adapters
+      OpenF1 REST ingestion (historical) :b1, after a1, 12d
+      Jolpica ingestion (schedule/results):b2, after a1, 7d
+      FIA PDF fetch/parse (optional)     :b3, after a2, 14d
+
+      section Product MVP
+      Live dashboard (tower/track/race control) :c1, after b1, 18d
+      Stint + pit-window analytics       :c2, after c1, 14d
+      Anomaly alerts                     :c3, after c1, 10d
+
+
+
+
+                                                  11
+       section Hardening
+       Rate limiting + caching + ops                              :d1, after c2, 10d
+       Evaluation + backtests                                     :d2, after c2, 10d
+
+
+Recommended open-source building blocks and repos (links)
+
+Code/licence choices in this space matter: e.g., FastF1 is MIT; jolpica-f1 repo is Apache-2.0, while some
+apps (like undercutf1) are GPL-3.0-only—fine for learning, but consequential if you plan to embed code
+in a proprietary stack. 64
+
+
+
+     Core data + APIs
+     - FastF1: https://github.com/theOehrly/Fast-F1
+     - OpenF1 API: https://github.com/br-g/openf1
+     - Jolpica (Ergast-compatible historical API): https://github.com/jolpica/
+     jolpica-f1
+
+     Live timing clients / dashboards
+     - undercutf1 (TUI): https://github.com/JustAman62/undercut-f1
+     - OpenF1.Data / open-f1 console: https://github.com/BrownKnight/open-f1
+     - f1-live-data (FastF1 -> InfluxDB/Grafana pipeline): https://github.com/
+     f1stuff/f1-live-data
+     - F1RacingCompanion (Android live timing): https://github.com/wkol/
+     F1RacingCompanion
+
+     Official document tooling
+     - FIA PDF parser tooling: https://github.com/harningle/fia-doc
+
+
+Key risks to plan for
+
+Upstream change is not hypothetical: community reports show endpoint migration to SignalR Core and
+topic availability changes (e.g., CarData.z gaps). Build explicit “adapter health” checks and fallbacks
+(e.g., degrade to timing-only when telemetry channels disappear).                  65
+
+
+
+
+Finally, treat licensing as a first-class technical requirement: Formula 1 legal notices constrain
+reproduction/commercial use of timing data, and community APIs here commonly use
+NonCommercial Creative Commons licences, meaning monetisation requires a licensing plan rather
+than a technical workaround. 66
+
+
+
+ 1    18   24   31   51   56   58   https://www.nuget.org/packages/OpenF1.Data/
+https://www.nuget.org/packages/OpenF1.Data/
+
+ 2    9    26   29   33   34   43   45   50   52   57   https://openf1.org/docs/
+https://openf1.org/docs/
+
+ 3    10   https://pypi.org/project/fastf1/
+https://pypi.org/project/fastf1/
+
+ 4   https://ergast.com/mrd/
+https://ergast.com/mrd/
+
+
+
+
+                                                                   12
+ 5   21   55   https://betradar.com/formula-1/
+https://betradar.com/formula-1/
+
+ 6   25   https://github.com/theOehrly/Fast-F1/issues/248
+https://github.com/theOehrly/Fast-F1/issues/248
+
+ 7 https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/
+season-2026-2072
+https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2026-2072
+
+ 8   https://api.fia.com/f1-archives
+https://api.fia.com/f1-archives
+
+11   65   https://github.com/theOehrly/Fast-F1/issues/753
+https://github.com/theOehrly/Fast-F1/issues/753
+
+12   13   39   https://github.com/jolpica/jolpica-f1/blob/main/TERMS.md
+https://github.com/jolpica/jolpica-f1/blob/main/TERMS.md
+
+14   15   https://www.racefans.net/contact/about-racefans/
+https://www.racefans.net/contact/about-racefans/
+
+16   https://formulae.brew.sh/formula/undercutf1
+https://formulae.brew.sh/formula/undercutf1
+
+17   https://news.ycombinator.com/item?id=43734910
+https://news.ycombinator.com/item?id=43734910
+
+19   https://www.nuget.org/packages/OpenF1.Data/1.0.26
+https://www.nuget.org/packages/OpenF1.Data/1.0.26
+
+20   35   https://docs.fastf1.dev/api_reference/cache_and_rate_limits.html
+https://docs.fastf1.dev/api_reference/cache_and_rate_limits.html
+
+22   https://sportsapi.com/api-directory/sportradar/
+https://sportsapi.com/api-directory/sportradar/
+
+23   54   https://github.com/JustAman62/undercut-f1
+https://github.com/JustAman62/undercut-f1
+
+27   36   63   66   https://www.formula1.com/en/information/guidelines.4EOKE9RRqevL4niTK9kWyt
+https://www.formula1.com/en/information/guidelines.4EOKE9RRqevL4niTK9kWyt
+
+28   38   41   47   59   https://openf1.org/
+https://openf1.org/
+
+30   https://github.com/theOehrly/Fast-F1/blob/master/fastf1/livetiming/client.py
+https://github.com/theOehrly/Fast-F1/blob/master/fastf1/livetiming/client.py
+
+32   https://github.com/ppatierno/formula1-telemetry-kafka/blob/main/README.md
+https://github.com/ppatierno/formula1-telemetry-kafka/blob/main/README.md
+
+37 https://www.formula1.com/en/information/f1-tv-subscription-terms-
+us-2024.384sQqjslhQ2Rhm1LdKgfD
+https://www.formula1.com/en/information/f1-tv-subscription-terms-us-2024.384sQqjslhQ2Rhm1LdKgfD
+
+40   64   https://github.com/theOehrly/Fast-F1/blob/main/LICENSE
+https://github.com/theOehrly/Fast-F1/blob/main/LICENSE
+
+42   53   60   https://openf1.org/auth.html
+https://openf1.org/auth.html
+
+
+
+
+                                                            13
+44   https://www.mdpi.com/2076-3417/10/21/7805
+https://www.mdpi.com/2076-3417/10/21/7805
+
+46   https://github.com/theOehrly/Fast-F1/issues/781
+https://github.com/theOehrly/Fast-F1/issues/781
+
+48   https://pmc.ncbi.nlm.nih.gov/articles/PMC10660124/
+https://pmc.ncbi.nlm.nih.gov/articles/PMC10660124/
+
+49   62   https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2025.1673148/pdf
+https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2025.1673148/pdf
+
+61   https://github.com/br-g/openf1/issues/303
+https://github.com/br-g/openf1/issues/303
+
+
+
+
+                                                              14
+

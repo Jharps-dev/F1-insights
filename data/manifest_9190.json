@@ -1,0 +1,164 @@
+{
+  "schema_version": "1.0",
+  "dataset_name": "openf1_session_9190",
+  "created_utc": "2026-03-17T12:21:03.583Z",
+  "year": 2023,
+  "session_name": "Practice 1",
+  "date_start_utc": "2023-11-24T09:30:00+00:00",
+  "date_end_utc": "2023-11-24T10:30:00+00:00",
+  "import_profile": "lite",
+  "meeting_key": 1226,
+  "session_key": 9190,
+  "session_type": "Practice",
+  "circuit_short_name": "Yas Marina Circuit",
+  "drivers": [
+    {
+      "number": 2,
+      "code": "SAR",
+      "name": "Logan SARGEANT",
+      "team": "Williams",
+      "team_color": "37BEDD"
+    },
+    {
+      "number": 3,
+      "code": "RIC",
+      "name": "Daniel RICCIARDO",
+      "team": "AlphaTauri",
+      "team_color": "5E8FAA"
+    },
+    {
+      "number": 10,
+      "code": "GAS",
+      "name": "Pierre GASLY",
+      "team": "Alpine",
+      "team_color": "2293D1"
+    },
+    {
+      "number": 18,
+      "code": "STR",
+      "name": "Lance STROLL",
+      "team": "Aston Martin",
+      "team_color": "358C75"
+    },
+    {
+      "number": 20,
+      "code": "MAG",
+      "name": "Kevin MAGNUSSEN",
+      "team": "Haas F1 Team",
+      "team_color": "B6BABD"
+    },
+    {
+      "number": 22,
+      "code": "TSU",
+      "name": "Yuki TSUNODA",
+      "team": "AlphaTauri",
+      "team_color": "5E8FAA"
+    },
+    {
+      "number": 29,
+      "code": "OWA",
+      "name": "Patricio O'WARD",
+      "team": "McLaren",
+      "team_color": "F58020"
+    },
+    {
+      "number": 34,
+      "code": "DRU",
+      "name": "Felipe DRUGOVICH",
+      "team": "Aston Martin",
+      "team_color": "358C75"
+    },
+    {
+      "number": 36,
+      "code": "DEN",
+      "name": "Jake DENNIS",
+      "team": "Red Bull Racing",
+      "team_color": "3671C6"
+    },
+    {
+      "number": 37,
+      "code": "HAD",
+      "name": "Isack HADJAR",
+      "team": "Red Bull Racing",
+      "team_color": "3671C6"
+    },
+    {
+      "number": 39,
+      "code": "SHW",
+      "name": "Robert SHWARTZMAN",
+      "team": "Ferrari",
+      "team_color": "F91536"
+    },
+    {
+      "number": 42,
+      "code": "VES",
+      "name": "Frederik VESTI",
+      "team": "Mercedes",
+      "team_color": "6CD3BF"
+    },
+    {
+      "number": 45,
+      "code": "OSU",
+      "name": "Zak O'SULLIVAN",
+      "team": "Williams",
+      "team_color": "37BEDD"
+    },
+    {
+      "number": 50,
+      "code": "BEA",
+      "name": "Oliver BEARMAN",
+      "team": "Haas F1 Team",
+      "team_color": "B6BABD"
+    },
+    {
+      "number": 55,
+      "code": "SAI",
+      "name": "Carlos SAINZ",
+      "team": "Ferrari",
+      "team_color": "F91536"
+    },
+    {
+      "number": 61,
+      "code": "DOO",
+      "name": "Jack DOOHAN",
+      "team": "Alpine",
+      "team_color": "2293D1"
+    },
+    {
+      "number": 63,
+      "code": "RUS",
+      "name": "George RUSSELL",
+      "team": "Mercedes",
+      "team_color": "6CD3BF"
+    },
+    {
+      "number": 77,
+      "code": "BOT",
+      "name": "Valtteri BOTTAS",
+      "team": "Alfa Romeo",
+      "team_color": "C92D4B"
+    },
+    {
+      "number": 81,
+      "code": "PIA",
+      "name": "Oscar PIASTRI",
+      "team": "McLaren",
+      "team_color": "F58020"
+    },
+    {
+      "number": 98,
+      "code": "POU",
+      "name": "Theo POURCHAIRE",
+      "team": "Alfa Romeo",
+      "team_color": "C92D4B"
+    }
+  ],
+  "source_priority": [
+    "openf1"
+  ],
+  "time_basis": "utc",
+  "files": {
+    "events_jsonl": "events_9190.jsonl",
+    "manifest_json": "manifest_9190.json"
+  }
+}

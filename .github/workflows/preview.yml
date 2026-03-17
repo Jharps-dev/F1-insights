@@ -1,0 +1,28 @@
+name: Preview Build
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile || pnpm install
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-build
+          path: |
+            apps
+            services
+            packages

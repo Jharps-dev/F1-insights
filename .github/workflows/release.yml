@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile || pnpm install
+      - run: pnpm test && pnpm test:replay && pnpm build
+      - run: mkdir -p dist-release && zip -r dist-release/f1-insights-${GITHUB_REF_NAME}.zip . -x 'node_modules/*' '.git/*'
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist-release/*.zip
+          generate_release_notes: true

@@ -1,0 +1,13 @@
+{
+  "name": "@f1-insights/schemas",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Canonical data schemas for F1 Insights",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "private": true
+}

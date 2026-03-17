@@ -1,0 +1,26 @@
+name: Nightly Replay Regression
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  replay-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile || pnpm install
+      - run: pnpm test:replay
+      - uses: actions/upload-artifact@v4
+        with:
+          name: replay-reports
+          path: docs/qa/reports
+          if-no-files-found: ignore

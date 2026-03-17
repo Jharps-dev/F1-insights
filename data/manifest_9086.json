@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "dataset_name": "openf1_session_9086",
+  "created_utc": "2026-03-17T12:00:15.852Z",
+  "year": 2023,
+  "session_name": "Race",
+  "date_start_utc": "2023-05-21T13:00:00+00:00",
+  "date_end_utc": "2023-05-21T15:00:00+00:00",
+  "import_profile": "lite",
+  "meeting_key": 1209,
+  "session_key": 9086,
+  "session_type": "Race",
+  "circuit_short_name": "Imola",
+  "drivers": [],
+  "source_priority": [
+    "openf1"
+  ],
+  "time_basis": "utc",
+  "files": {
+    "events_jsonl": "events_9086.jsonl",
+    "manifest_json": "manifest_9086.json"
+  }
+}

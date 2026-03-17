@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "dataset_name": "openf1_session_9081",
+  "created_utc": "2026-03-17T11:59:09.491Z",
+  "year": 2023,
+  "session_name": "Practice 3",
+  "date_start_utc": "2023-05-20T10:30:00+00:00",
+  "date_end_utc": "2023-05-20T11:30:00+00:00",
+  "import_profile": "lite",
+  "meeting_key": 1209,
+  "session_key": 9081,
+  "session_type": "Practice",
+  "circuit_short_name": "Imola",
+  "drivers": [],
+  "source_priority": [
+    "openf1"
+  ],
+  "time_basis": "utc",
+  "files": {
+    "events_jsonl": "events_9081.jsonl",
+    "manifest_json": "manifest_9081.json"
+  }
+}

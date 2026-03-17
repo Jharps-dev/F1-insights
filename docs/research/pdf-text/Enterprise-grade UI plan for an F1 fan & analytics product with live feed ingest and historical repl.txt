@@ -1,0 +1,1429 @@
+Enterprise-grade UI plan for an F1 fan &
+analytics product with live feed ingest and
+historical replay
+Executive summary
+A premium, enterprise-grade F1 fan & analytics UI is feasible with a web-first SPA that consumes a
+canonical event stream (live + replay) over WebSockets, with an optional desktop shell (Tauri
+preferred for footprint/security controls) for offline dataset bundling and “replay-first” demos. The best
+near-term open/community backbone is OpenF1 for historical (free) and live (paid) timing/telemetry/
+race-control data over REST plus MQTT/WebSocket streaming, with explicit documented auth and topic
+conventions. 1
+
+
+Key architectural choices that keep latency low and UI “swanky”:
+
+
+1) Treat the UI as a subscriber to a canonical timeline, not as a direct consumer of multiple upstream
+formats. Build a replay clock and a WebSocket gateway that emits render-ready event envelopes
+(idempotent, ordered, backpressure-aware). OpenF1’s streaming messages already include an ever-
+increasing _id and a stable _key that can be leveraged for ordering and upserts. 2
+2) Use a performance budget discipline: keep animation work inside a ~10ms/frame budget for 60fps
+experiences and handle input within ~50ms where possible; when that fails, degrade gracefully via
+decimation and progressive rendering. 3
+3) Enterprise readiness from day one: adopt OAuth2/OIDC SSO patterns and RBAC, ship full audit
+logging, add strict CSP/desktop IPC hardening, and implement retention/minimisation controls aligned
+to UK GDPR principles. 4
+4) Licensing is a gating item: Open/community sources are typically non-commercial (e.g., CC
+BY‑NC‑SA) and official Formula 1 properties explicitly restrict scraping, substantial reuse, and AI/text-
+data-mining uses without an express licence. Your MVP should therefore be framed as demo /
+research / non-commercial unless you procure a licensed feed. 5
+
+
+Two build tracks are recommended:
+
+
+     • Enterprise MVP (12–20 weeks, target ~16 weeks): Web SPA + backend replay hub + OpenF1
+       import + “swanky” core components (timing tower, track map, telemetry canvas, stints/pit, race-
+       control feed, driver/highlight cards) + observability and security baseline.
+     • Post‑MVP (licensing + live SLA): add licensed low-latency provider (e.g., Sportradar gRPC event
+       stream) for production live analytics; harden multi-tenant controls; expand AI analytics features
+       and evaluation.
+
+
+
+
+                                                    1
+Assumptions and constraints
+Assumptions (explicit):
+
+
+     • Target OS, budget, and expected concurrency are unspecified; the plan favours a web-first
+       approach and isolates “desktop/offline” as an optional path.
+     • Target latency SLA is unspecified; the system is designed to support sub-second internal
+       pipelines but must still tolerate upstream multi-second delays and broadcast-delay
+       synchronisation controls. OpenF1 indicates live updates can be ~3 seconds behind track events
+       and highlights that it can be “faster than most TV broadcasts.” 6
+     • “Enterprise-grade” implies SSO/RBAC, audit logging, monitoring/alerting, secure SDLC, and
+       privacy-by-design.
+
+Non-negotiable constraints (licensing/legal):
+
+
+     • OpenF1 is licensed under CC BY‑NC‑SA 4.0 (non-commercial share-alike), and is explicitly
+       positioned as an unofficial community project. 7
+     • Jolpica’s Ergast-compatible API is non-commercial and CC BY‑NC‑SA 4.0, with published limits
+       and disclaimers (volunteer-run; no uptime guarantees). 8
+     • Formula 1 guideline language states timing/statistics/results data is protected by copyright/
+       database rights, warns against commercial scraping/substantial reproduction, and includes
+       explicit restrictions related to AI/text-and-data-mining without an express licence. 9
+     • F1 TV subscription terms include “not use… any text or data mining or web scraping” in relation
+       to the service/site.   10
+
+
+
+Implication: MVP should use only sources whose terms you can comply with, and the UI should ship
+with a clear “demo/non-commercial” disclaimer and removable branding.
+
+
+Platform decision and frontend framework rationale
+
+Recommended platform strategy
+
+Web SPA first, desktop optional (Tauri/Electron)
+
+
+     • Web SPA is the fastest path to broad reach, lowest distribution friction, and easiest A/B iteration.
+       For real-time dashboards, the key is tight control of render loops and high-performance
+       streaming updates—not SSR.
+     • Desktop shell is valuable for:
+     • bundling a replay dataset for demos/offline use,
+     • offering native multi-window experiences (multi-screen timing/telemetry),
+     • secure local storage of large session packs.
+
+Desktop trade-offs are most cleanly handled by keeping your UI a pure web app and swapping only the
+“host” (browser vs desktop shell).
+
+
+
+
+                                                    2
+Desktop shell: Tauri vs Electron
+
+                       Web SPA
+  Dimension                                Desktop with Tauri             Desktop with Electron
+                       only
+
+                                           Uses OS WebView (no
+  Runtime                                                                 Bundles Chromium + Node
+                       Minimal             bundled Chromium),
+  footprint                                                               runtime; larger installs
+                                           typically smaller installers
+
+                                           Strong native access via
+                       Limited to                                         Strong native access via Node
+  Native APIs                              Rust core + permission
+                       browser                                            ecosystem
+                                           model
+
+                                           Capability/permission-         Mature guidance but easy to
+                       CSP +
+                                           based access control           misconfigure; you must follow
+  Security posture     browser
+                                           model encourages least         strict security best practices
+                       sandbox
+                                           privilege 11                    12
+
+
+                                           Supported via updater
+                       Browser/                                           Supported via autoUpdater
+  Auto-update                              plugin (static JSON or
+                       CDN                                                feed/update server 14
+                                           update server) 13
+
+                       Hard (needs
+  Offline dataset                          Excellent (ship DB/files
+                       PWA +                                              Excellent (ship DB/files locally)
+  bundling                                 locally)
+                       caches)
+
+  Recommended                              Optional “Replay Pack”         Only if you heavily rely on
+                       Primary
+  use                                      edition                        Node native modules
+
+Evidence anchors: Electron embeds Chromium and Node.js. 15 Tauri uses OS webviews (e.g.,
+WebView2 on Windows) and provides security-oriented configuration primitives (permissions/
+capabilities). 16
+
+
+Recommendation: prefer Tauri for an enterprise product where least-privilege and smaller footprint are
+valued, and keep Electron as a fallback if Node-native modules or existing Electron tooling dominate
+your org.
+
+
+Frontend framework choice
+
+For an enterprise real-time analytics UI, the primary selection criteria are:
+
+
+      • performance control (fine-grained update priority, rendering strategies, worker integration),
+      • ecosystem maturity for enterprise testing/observability,
+      • long-term maintainability (hiring, libraries, conventions).
+
+A strong default choice is React + Vite:
+
+
+      • Vite is a modern build tool with fast dev server and production builds (Rollup-based), widely
+        adopted for SPAs. 17
+      • React’s ecosystem has the deepest pool of charting, virtualisation, e2e testing, and enterprise
+        observability integrations (practically relevant even if other frameworks are faster on micro-
+        benchmarks).
+
+
+
+
+                                                        3
+When to choose Next.js instead: if you need authenticated SSR pages (marketing, account pages, SEO)
+and want a single framework across product + site. Next.js is designed for server rendering and routing
+primitives that can help for enterprise portals. 18
+
+
+When to choose SvelteKit instead: if your team prefers smaller runtime and you want high
+performance with less ceremony; SvelteKit provides SSR/adapter ecosystem as needed. 19
+
+
+Flutter and Qt are valid but shift the product away from the web toolchain. Flutter supports desktop
+targets, but the web ecosystem for real-time charting and observability is typically easier in web-native
+stacks. 20 Qt is powerful but has its own licensing model that must be assessed for enterprise
+distribution. 21
+
+
+Design system, premium motorsport patterns, and performance
+budgets
+
+Design system foundations
+
+A premium motorsport product tends to feel “swanky” when it has:
+
+
+     • disciplined grid and spacing,
+     • strong typographic hierarchy for at-a-glance scanning,
+     • high-contrast but restrained colour palette,
+     • polished motion that never compromises readability.
+
+Accessibility constraints should be built into tokens. For example, WCAG contrast guidance for text
+specifies minimum contrast ratios (e.g., 4.5:1 for normal text, 3:1 for large text). 22
+
+
+Token model (recommendation): - colour: bg , surface , text , muted , accent , danger ,
+warning ,     success ,    team-* ,    tyre-*    - typography:    font-ui ,     font-mono ,    size-* ,
+weight-* , line-* - spacing: 4px base scale - radius: 4/8/12 - motion: durations + easing curves,
+with a “reduce motion” mode
+
+
+Example CSS token snippet (illustrative):
+
+
+
+  :root {
+    /* Colour */
+    --c-bg: #0b0f14;
+    --c-surface: #101826;
+    --c-surface2: #141f30;
+    --c-text: #e7eefc;
+    --c-muted: #9fb0cc;
+    --c-accent: #7dd3fc;
+
+    /* Semantic */
+    --c-danger: #fb7185;
+    --c-warning: #fbbf24;
+    --c-success: #34d399;
+
+    /* Typography */
+
+
+
+
+                                                   4
+    --font-ui: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+  "Helvetica Neue", Arial;
+    --font-mono: ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono",
+  "Courier New", monospace;
+
+
+      /* Spacing */
+      --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-6: 24px; --s-8: 32px;
+
+      /* Motion */
+      --ease-out: cubic-bezier(.2,.8,.2,1);
+      --dur-fast: 120ms;
+      --dur-med: 220ms;
+  }
+
+
+Responsive layouts (desktop/tablet/mobile)
+
+A real-time motorsport dashboard is naturally “desktop-first”, but mobile support is still viable using
+adaptive composition:
+
+
+      • Desktop: 12/24-column grid, multi-panel (timing + map + telemetry + events).
+      • Tablet: 2-column, collapsible telemetry.
+      • Mobile: single column; “timing tower” becomes a virtualised list with a sticky header.
+
+Critical: avoid reflow “storms” during live updates; prefer GPU-friendly transforms and localised DOM
+updates.
+
+
+Performance budgets and rendering rules
+
+Use explicit budgets aligned to web performance guidance:
+
+
+      • Animation frame budget: aim for ~10ms of app work per frame (browsers need time to
+        render). 23
+      • Responsiveness: provide user feedback ideally within 50–100ms. 24
+      • Animation scheduling: use requestAnimationFrame() rather than timers for visual
+       updates.   25
+
+
+
+For telemetry/position streams, the UI must implement: - decimation/downsampling (server-side
+preferred), - ring buffers per driver, - Web Workers for parsing/aggregation, - backpressure controls
+(subscription toggles, “lite mode”).
+
+
+Competitor audit and UI learnings
+Competitors and adjacent products reveal what to copy (interaction patterns) and what to avoid (visual
+noise, over-animated surfaces). The list below focuses on features and patterns, not “data legality”.
+
+
+What works well across products
+
+      • Delay/sync controls: Live timing often arrives ahead/behind broadcast streams; “delay control”
+        is a recurring premium feature.
+      • FormulaTimer advertises delay control to sync timing data with the user’s viewing method. 26
+      • F1 Live Pulse exposes adjustable delay settings (0–180s) for sync mode. 27
+
+
+
+                                                     5
+    • undercut-f1 explicitly supports delaying displayed data to match broadcast delay and records for
+      session replays. 28
+
+
+    • Integrated race-control feed: Users want a single “truth timeline” (SC/VSC, flags, investigations)
+      in the same UI surface as timing.
+
+
+    • MultiViewer highlights race control messages as a first-class feature.   29
+
+
+
+    • F1 live timing positions itself as “every digit of every session”, with driver tracker map and tyre
+      information surfaces. 30
+
+
+    • Swappable layouts / custom columns: Personalised column sets reduce clutter (gaps, intervals,
+      sectors, tyres, mini-sectors).
+
+
+Specific competitor call-outs
+
+    • FormulaTimer.com: positions itself as a live timing analytics dashboard with leaderboard, track
+      map, mini sectors, custom columns, and delay control. This is a good “swanky UI” baseline to
+      match or surpass (layout polish, readability, customisation). 26
+
+
+    • MultiViewer (desktop): combines onboard viewing layouts with live timing/telemetry sync, plus
+      spoiler-avoidance and race control messages. Pattern to learn: multi-window layouts + “no
+      spoilers” catalogue UX. 29
+      MultiViewer 31
+
+
+    • F1Dash: positions itself as an “all in one” fan platform: live timing, track maps, team radio,
+      telemetry comparisons, race control, replay, and AI transcription. Useful as a feature coverage
+      checklist for post‑MVP (especially replay UX and radio readability), but you should validate data
+      provenance/terms carefully. 32
+      F1Dash 33
+
+
+    • Official F1 Live Timing: the official product messaging emphasises deep live timing with driver
+      tracker maps and tyre context. 34
+      The 2022 announcement also mentions a feature set: full leaderboard, track segment and driver
+      telemetry data, interactive circuit map, and real-time driver tracker for subscribers. 35
+
+
+What to avoid
+
+    • Over-animated tables where every cell flashes/animates each update (creates “attention theft”).
+    • Unbounded rendering approaches (SVG with thousands of nodes for live telemetry) without
+      decimation.
+    • “Everything everywhere” layouts—premium feel comes from intentional restraint and
+      progressive disclosure.
+
+
+
+
+                                                   6
+Data integration plan, canonical schema, and live/replay wiring
+
+Canonical data strategy (UI contract)
+
+The UI should consume a single “canonical” stream:
+
+
+      • Event envelope for every update (timing, lap, position, telemetry point, weather, race control,
+        radio).
+      • Strong ordering semantics (monotonic sequence per source; deterministic replay).
+      • Idempotent upserts keyed by stable IDs.
+
+OpenF1 already provides two crucial streaming fields: - _id (ever-increasing; chronological sort), -
+_key (document identifier for updates to the same object).       36
+
+
+
+
+Canonical envelope (example)
+
+
+
+  {
+      "schema_version": "1.0",
+      "source": "openf1",
+      "topic": "v1/laps",
+      "ingest_ts": "2026-03-16T12:34:56.789Z",
+      "event_ts": "2026-03-16T12:34:55.123Z",
+    "sequence": 1747235800206,
+    "key": "1744370476603_31",
+    "payload": { "session_key": 9839, "driver_number": 44, "lap_number": 12,
+  "lap_duration": 95.401 }
+  }
+
+
+Live/community sources and access patterns
+
+OpenF1 (demo + live)
+
+OpenF1 provides REST for historical queries and documents MQTT/WebSocket streaming for live
+sessions, with a documented OAuth2 token endpoint and connection details. 37
+
+
+Key documented details to implement:
+
+
+      • Token: POST https://api.openf1.org/token (username/password), tokens expire in 1
+        hour. 38
+      • MQTT broker: mqtt.openf1.org:8883 (TLS), WebSocket: wss://mqtt.openf1.org:8084/
+       mqtt .   36
+
+      • Topics map 1:1 to REST endpoint paths (e.g., v1/location , v1/laps ).         36
+
+      • Formats: JSON by default; CSV available via csv=true .        39
+
+      • Sampling/latency: car telemetry and location at ~3.7 Hz, intervals/gaps updated about every 4
+        seconds (documented). 40
+      • Tiering/rate limits: historical free tier has published request limits; live streaming in paid
+        sponsorship tier. 41
+
+Concrete demo import patterns (OpenF1):
+
+
+
+
+                                                     7
+  # Sessions list (JSON)
+  curl "https://api.openf1.org/v1/sessions?year=2023"
+
+  # Sessions list (CSV)
+  curl -L "https://api.openf1.org/v1/sessions?year=2023&csv=true" -o
+  sessions_2023.csv
+
+  # Car telemetry example
+  curl "https://api.openf1.org/v1/car_data?
+  driver_number=55&session_key=9159&speed>=315"
+
+  # Team radio (note: limited selection, not complete)
+  curl "https://api.openf1.org/v1/team_radio?session_key=9158&driver_number=11"
+
+  # Weather (updated every minute)
+  curl "https://api.openf1.org/v1/weather?
+  meeting_key=1208&track_temperature>=52"
+
+  # Race control messages
+  curl "https://api.openf1.org/v1/race_control?session_key=9158"
+
+
+(Endpoints, fields, and examples are documented in OpenF1’s API docs.           42 )
+
+
+
+
+SignalR live timing (via community wrappers)
+
+Multiple open-source projects connect to livetiming.formula1.com via SignalR. This is an official
+endpoint, but that does not imply an official licence for reuse. In practice, you must treat direct
+consumption as high legal/compliance risk for commercial products. Formula 1’s guidance warns
+against commercial scraping/substantial reproduction. 43
+
+
+Community wrapper behaviour you can reuse for demo tooling:
+
+
+      • OpenF1.Data (NuGet) documents that the live timing stream is SignalR at https://
+       livetiming.formula1.com/signalr and lists topics like TimingData ,
+        RaceControlMessages , WeatherData , plus optional CarData.z and Position.z . It
+       also describes a record+replay file format ( subscribe.txt , live.txt ) and a replay client
+        that re-emits messages with calculated delay. 44
+      • FastF1 includes a live timing SignalR client that records raw data; critically, it states it is not
+        possible to use this data during a session, only post-session processing. 45
+
+Replay timeline key insight: FastF1 explains that SessionTime is relative to session start, with
+SessionTime zero marking the beginning of data streams, and Date providing an absolute UTC
+timestamp. This is exactly the semantic split you want in your replay engine (clock-relative vs wall-clock).
+ 46
+
+
+
+
+Jolpica (Ergast-compatible) for historical coverage
+
+Jolpica provides Ergast-compatible endpoints at http://api.jolpi.ca/ergast/f1/ and publishes
+explicit terms (non-commercial use, CC BY‑NC‑SA 4.0) and rate limits (e.g., 4 requests/sec, 500/hour in a
+maintainer response), plus advice to use pagination patterns on laps endpoints. 47
+
+
+
+
+                                                        8
+Demo import patterns (Ergast-style, illustrative):
+
+
+
+  # Season list / base query
+  curl "http://api.jolpi.ca/ergast/f1/seasons.json?limit=1000"
+
+
+  # Race results for a round (Ergast pattern)
+  curl "http://api.jolpi.ca/ergast/f1/2025/1/results.json"
+
+
+  # Lap times paging suggestion (avoid per-lap endpoint spam)
+  curl "http://api.jolpi.ca/ergast/f1/2024/17/laps.json?limit=100&offset=0"
+  curl "http://api.jolpi.ca/ergast/f1/2024/17/laps.json?limit=100&offset=100"
+
+
+(Endpoint base and rate-limit guidance are explicitly documented by the project.   48 )
+
+
+
+
+FIA PDFs for official documents (demo import)
+
+FIA hosts official decision documents per season on its documents site; the season page provides
+document lists and links to PDFs under https://www.fia.com/system/files/decision-
+document/...pdf .      49
+
+
+
+
+Demo import pattern:
+
+
+1) Fetch the season documents listing page (e.g., season 2026) and parse PDF links. 50
+2) Download PDFs by URL and extract tabular content into canonical structures (classification, penalties,
+etc.). 51
+
+
+Optional licensed provider for production live
+
+If you need commercial-grade live SLAs, you likely need a paid provider. Sportradar explicitly positions
+its F1 live feed as a low-latency real-time data feed delivered via a gRPC event stream. 52
+It also states its APIs are B2B and not intended to be called directly from a client application
+(architecturally, you’d put this behind your backend gateway). 53
+
+
+Data-source comparison table (UI integration focus)
+
+                                 Typical update
+                                 cadence /                             Access      Licence /                    Reliability
+  Source                Live?                        Data types                                   Cost
+                                 latency                               method      terms                        notes
+                                 (documented)
+
+                                 Car/Location
+                                 ~3.7 Hz;                                                                       Good demo
+                                                     Telemetry,                    CC             Free
+                                 intervals                                                                      backbone;
+                         Yes                         location, laps,               BY‑NC‑SA       historical;
+                                 about every                           REST +                                   production
+                     (paid) /                        intervals, race               4.0 +          paid
+  OpenF1                         4s; live tier                         MQTT +                                   commercial
+                   Historical                        control,                      project        sponsor
+                                 supports                              WSS 36                                   use requires
+                        free                         weather, radio                disclaimer     tier for
+                                 MQTT/                                                                          careful
+                                                     (partial) 55                    7            live 56
+                                 WebSocket                                                                      rights review
+                                  54
+
+
+
+
+                                                      9
+                               Typical update
+                               cadence /                            Access      Licence /              Reliability
+ Source               Live?                      Data types                                     Cost
+                               latency                              method      terms                  notes
+                               (documented)
+
+                                                                                Non-
+                                                                                commercial,
+                               Rate limited                                                            Great for
+                                                                                CC
+                               (4/sec, 500/                                                            historical
+                        No                       Results,                       BY‑NC‑SA
+ Jolpica                       hour cited);                                                            breadth;
+                 (primarily                      standings,         REST        4.0;            Free
+ (Ergast)                      paging                                                                  enforce
+                 historical)                     laps, etc.                     volunteer-
+                               recommended                                                             caching/
+                                                                                run
+                                57                                                                     backoff
+                                                                                disclaimer
+                                                                                 58
+
+
+                                                                                                       Strong
+                                                                    HTML        FIA site
+                                                                                                       “official
+                               Publication-      Classifications,   listing +   terms apply
+                                                                                                       record”;
+ FIA PDFs          Not live    time              steward docs,      PDF         (treat as       Free
+                                                                                                       parsing
+                               documents         infractions        download    official
+                                                                                                       complexity
+                                                                     49         docs)
+                                                                                                       high
+
+                               Cannot use                                       MIT code
+                                                                                                       Useful
+                               recorded data                        SignalR     licence for
+                      Live                       Live timing                                           capture tool
+ FastF1 live                   during session                       client +    library, but
+                 recording                       raw streams                                    Free   for replay
+ recorder                      (post-                               file        data rights
+                      only                       stored to file                                        dataset
+                               processing)                          output      separate
+                                                                                                       generation
+                                59                                               60
+
+
+                               Topics list                                                             Helpful
+                                                                                Package
+                               documented;                                                             reference fo
+ OpenF1.Data                                     Timing,                        terms;
+                     Live +    includes                                                                replay
+ recorder/                                       weather, race      SignalR     underlying      Free
+                    Replay     replay files                                                            formats and
+ replay                                          control, etc.                  data rights
+                               (subscribe/live                                                         topic
+                                                                                separate
+                               logs) 44                                                                coverage
+
+                               Low-latency                                                             Best fit for
+                               gRPC event        Leaderboard,                   B2B, not for           commercial
+                                                                    gRPC
+ Sportradar             Yes    stream            timing, pit                    direct client   Paid   SLA,
+                                                                    stream
+                               (commercial       stops, more                    use 53                 procuremen
+                               feed) 52                                                                required
+
+
+Import adapter outlines (pseudocode only)
+
+Node adapter outline (OpenF1 REST → canonical storage; idempotent upserts)
+
+
+
+  // PSEUDOCODE (outline only)
+  for each sessionKey in targetSessions:
+    url = `/v1/laps?session_key=${sessionKey}`
+    page = fetchWithBackoff(url, { cacheKey: url, etag: true })
+    for each lap in page.json:
+      env = envelope({
+
+
+
+
+                                                 10
+          source: "openf1",
+          topic: "v1/laps",
+          event_ts: lap.date,
+          key: `${lap.session_key}_${lap.driver_number}_${lap.lap_number}`,
+          payload: lap
+       })
+       upsert(env.key, env)                       // idempotent
+       appendToLog(env)                           // replay log (jsonl)
+
+
+Python adapter outline (Jolpica → canonical, respecting limits)
+
+
+
+  # PSEUDOCODE (outline only)
+  RATE = TokenBucket(rps=4, burst=4)                          # from maintainer guidance
+  for url in ergast_urls:
+      RATE.acquire()
+       resp = get(url, timeout=10)
+       if resp.status == 429:
+           sleep(backoff(resp.headers))
+           continue
+       data = resp.json()
+       cache_put(url, data)
+       map_to_canonical(data)
+       write_parquet_partitions()
+
+
+(The need for strict backoff and published limits is justified by Jolpica’s rate-limit guidance.   61 )
+
+
+
+
+Enterprise architecture, security, observability, and UI delivery
+patterns
+
+End-to-end architecture (frontend ↔ backend ↔ data)
+
+Mermaid diagram (target state: supports live + replay + optional ML inference):
+
+
+
+  flowchart LR
+    subgraph Upstream[Upstream data sources]
+      A[OpenF1 REST]
+      B[OpenF1 MQTT/WSS]
+      C[Jolpica (Ergast)]
+      D[FIA PDFs]
+      E[Licensed Live Feed (e.g., gRPC)]
+    end
+
+     subgraph Collectors[Collectors / Adapters]
+       A1[REST Importer]
+       B1[MQTT/WSS Stream Collector]
+       C1[Ergast Importer]
+       D1[PDF Harvester + Extractor]
+       E1[gRPC Stream Collector]
+
+
+
+
+                                                      11
+      end
+
+      subgraph Stream[Streaming + Storage]
+        K[(Kafka/Redpanda Topics)]
+        SR[(Schema Registry)]
+        OL[(Object Store: Parquet/JSONL)]
+        TS[(Time-series DB)]
+        KV[(Cache: Redis)]
+      end
+
+
+      subgraph Compute[Compute]
+        SP[Stream Processor\n(aggregations, gaps, stint model)]
+        FS[(Online Feature Store)]
+        MS[Model Serving\n(low-latency)]
+      end
+
+      subgraph API[Serving Layer]
+        GW[WebSocket Gateway\n(topic subscriptions, backpressure)]
+        RPL[Replay Clock Service]
+        AUTH[AuthN/AuthZ\nSSO/RBAC]
+      end
+
+      subgraph UI[Frontend]
+        SPA[Web SPA\nTiming/Telemetry/Replay]
+        DESK[Optional Desktop Host\n(Tauri/Electron)]
+      end
+
+      A --> A1 --> K
+      B --> B1 --> K
+      C --> C1 --> OL
+      D --> D1 --> OL
+      E --> E1 --> K
+
+      K <--> SP
+      SP --> TS
+      SP --> OL
+      SP --> FS --> MS
+      SP --> GW
+      RPL --> GW
+      AUTH --> GW
+      GW --> SPA
+      SPA <--> DESK
+      KV <--> GW
+      SR --> SP
+
+
+Security checklist (web + desktop)
+
+Token handling: OpenF1 itself warns that exchanging username/password for OAuth2 tokens must be
+done in backend code, not embedded in client-side apps; it also notes client-side token storage risks.
+ 62
+
+CSP: CSP is an effective defence-in-depth against XSS and injection attacks; Electron’s own guidance
+
+
+
+
+                                                 12
+recommends CSP for content loaded inside Electron. 63
+Desktop IPC hardening: adopt least privilege—Tauri’s permission model is explicitly designed around
+scoped command access. 11
+
+
+Enterprise AuthN/AuthZ patterns:
+
+
+     • OAuth 2.0 is the standard authorisation framework for tokens and delegated access. 64
+     • OpenID Connect adds an identity layer on top of OAuth 2.0. 65
+     • RBAC is a standard access control model where permissions attach to roles rather than
+       individuals. 66
+       IETF 67
+       NIST 68
+
+Privacy and compliance (UK/enterprise):
+
+
+     • Data minimisation and storage limitation (“keep only what you need, only as long as needed”)
+       are core GDPR principles; the ICO provides guidance and emphasises there are no fixed
+       retention limits—your schedule must match your purpose. 69
+     • Audit logging is useful for accountability but logs must be secured and used appropriately. 70
+       Information Commissioner's Office 71
+
+Observability and instrumentation points
+
+Use distributed tracing and structured logs from day one:
+
+
+     • Memorably, Sentry describes distributed traces as transactions and spans, capturing operations
+       across services. 72
+     • Honeycomb describes distributed tracing as end-to-end request visibility across services, useful
+       in microservice architectures. 73
+     • For open-source tracing backends, Jaeger/Zipkin are typical options (selection depends on your
+       existing stack); use OpenTelemetry conventions where possible.
+
+Instrumentation points (minimum set):
+
+
+     • Collector adapters: connection uptime, reconnects, message lag (event_ts → ingest_ts), decode
+       errors.
+     • Stream processor: per-topic throughput, watermark lag, join failures.
+     • WebSocket gateway: subscriptions count, backpressure drops, per-client queue depth.
+     • Replay clock: drift, determinism checksum errors.
+     • Frontend: FPS, long tasks, WebSocket message-to-render latency, error boundaries.
+
+Charting and telemetry rendering choices
+
+Charting choices should be separated into: 1) “interactive analytic charts” (hover, zoom, multi-series
+comparisons), 2) “high-frequency/continuous traces” (canvas/WebGL, ring buffers).
+
+
+Licensing and scale matter:
+
+
+     • Plotly.js is MIT-licensed and widely used. 74
+     • D3 modules have permissive licences (example: d3-selection licence grants broad permission).
+        75
+
+
+
+
+                                                  13
+     • Apache ECharts emphasises Canvas/SVG switching, progressive rendering, and claims it can
+       render very large datasets; it is an Apache project. 76
+       The Apache Software Foundation 77
+     • Highcharts is governed by an explicit EULA with strict definitions of personal/educational vs
+       commercial use; pay close attention in enterprise contexts. 78
+
+Charting/rendering comparison table
+
+
+                                                                                   Recommended
+ Approach           Best for            Pros                   Cons
+                                                                                   usage
+
+                                                               Manual
+                    Live telemetry      Fast for many                              Telemetry traces,
+ Canvas (2D)                                                   interactions
+                    overlays, high      points; low DOM                            throttle/brake/
+ custom traces                                                 (zoom/hover)
+                    update rates        overhead                                   speed, gap history
+                                                               harder
+
+ WebGL (via
+                                                                                   Track maps with
+ Plotly/WebGL       Very large point                           Complexity;
+                                        GPU acceleration                           many points, long
+ modes / regl /     clouds, smooth                             driver issues
+                                                                                   replays
+ custom)
+
+                    Dashboards          Performance                                Stint charts, pit
+ ECharts                                                       Needs careful
+                    with many           features; rich                             timelines, sector
+ (Canvas)                                                      data shaping
+                    charts              ecosystem                                  comparisons
+
+                                                               SVG scaling
+                    Bespoke visuals     Ultimate control;                          Low-cardinality
+                                                               issues; many
+ D3 + SVG           with precise        good for bespoke                           visuals, sparklines,
+                                                               nodes can be
+                    control             UI                                         annotations
+                                                               slow
+
+                    Analyst-style
+                                        Great interactions;                        Deep-dive analysis
+ Plotly.js          interactive                                Heavier bundle
+                                        MIT license                                modal views
+                    charts
+
+                    Enterprise
+                                        Good polish,           Licensing           Only if you procure
+ Highcharts         support &
+                                        documentation          constraints         correct licence
+                    polish
+
+
+Component-level UI designs (React TSX examples)
+
+Below are minimal illustrative snippets showing component contracts and update patterns.
+
+
+Timing Tower (virtualised, low-jank updates)
+
+
+  type DriverRow = {
+    driverId: string;
+    position: number;
+    code: string;           // e.g., "HAM"
+    gapToLeaderMs?: number;
+    intervalMs?: number;
+    lastLapMs?: number;
+    tyreCompound?: string;
+    pitCount?: number;
+
+
+
+
+                                                  14
+       status?: "RUN" | "PIT" | "DNF" | "DNS";
+  };
+
+  export function TimingTower({ rows }: { rows: DriverRow[] }) {
+    // Strictly avoid per-row re-renders: memo rows, stable keys, diff only
+  changed cells.
+    return (
+      <div className="tower">
+        <header className="tower__hdr">
+           <span>P</span><span>DRV</span><span>GAP</span><span>INT</
+  span><span>LAST</span><span>TYRE</span>
+         </header>
+         <div className="tower__body" role="table" aria-label="Live timing
+  tower">
+           {rows.map(r => (
+              <div key={r.driverId} className="tower__row" role="row">
+                <span className="mono">{r.position}</span>
+                <span className="code">{r.code}</span>
+                <span className="mono">{fmtGap(r.gapToLeaderMs)}</span>
+                <span className="mono">{fmtGap(r.intervalMs)}</span>
+                <span className="mono">{fmtLap(r.lastLapMs)}</span>
+                <span className={`tyre tyre--${r.tyreCompound ?? "unk"}`}
+  >{r.tyreCompound ?? "—"}</span>
+              </div>
+           ))}
+         </div>
+       </div>
+    );
+  }
+
+
+CSS pattern (tokens + readability):
+
+
+
+  .tower { background: var(--c-surface); color: var(--c-text); border-radius:
+  10px; }
+  .tower__hdr, .tower__row { display: grid; grid-template-columns: 28px 48px
+  72px 72px 72px 56px; gap: 8px; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .tower__row { padding: 8px 10px; }
+  .tower__row:hover { background: color-mix(in srgb, var(--c-surface2) 70%,
+  transparent); }
+
+
+Telemetry canvas (ring buffer + worker parsing)
+
+Key UI principle: parsing and aggregation should not occur on the main thread. Use
+ requestAnimationFrame() for draw scheduling. 25
+
+
+
+  export function TelemetryCanvas({ streamId }: { streamId: string }) {
+    const ref = React.useRef<HTMLCanvasElement | null>(null);
+
+
+
+
+                                                  15
+    React.useEffect(() => {
+      const canvas = ref.current!;
+      const worker = new Worker(new URL("./telemetry.worker.ts",
+  import.meta.url));
+
+
+      worker.postMessage({ type: "bind", canvas }, [canvas as any]); //
+  OffscreenCanvas where supported
+      worker.postMessage({ type: "subscribe", streamId });
+
+
+        return () => worker.terminate();
+      }, [streamId]);
+
+    return <canvas ref={ref} width={900} height={240} aria-label="Telemetry
+  trace" />;
+  }
+
+
+Worker responsibilities (design): - maintain per-driver ring buffers, - decimate points if queue grows, -
+draw at a capped FPS (e.g., 30fps) if overwhelmed.
+
+
+Race control feed (accessible “event timeline”)
+
+
+  type RCEvent = { id: string; ts: string; category: string; message: string;
+  severity: "info"|"warn"|"danger" };
+
+  export function RaceControlFeed({ events }: { events: RCEvent[] }) {
+    return (
+      <section aria-label="Race control messages" className="rc">
+        {events.map(e => (
+          <article key={e.id} className={`rc__item rc__item--${e.severity}`}>
+             <time className="mono" dateTime={e.ts}>{fmtTime(e.ts)}</time>
+             <div>
+               <div className="rc__cat">{e.category}</div>
+               <div className="rc__msg">{e.message}</div>
+             </div>
+          </article>
+        ))}
+           </section>
+      );
+  }
+
+
+
+WebSocket subscription patterns (UI ↔ gateway)
+
+The gateway should expose explicit subscription controls:
+
+
+
+  { "op": "subscribe", "topic": "timing.tower", "selectors": { "sessionKey":
+  9839 } }
+
+
+
+
+                                                   16
+Backpressure semantics (recommended): - server sends {"op":"slowdown","suggestedFps":15}
+when client falls behind, - client can switch to a “lite” subscription set (no telemetry, timing only).
+
+
+Replay mode and offline bundling
+
+Replay should be deterministic and distributable:
+
+
+      • Data store: JSONL event logs + Parquet for columnar analytics; local SQLite/DuckDB index for
+        random-access (desktop edition).
+      • Replay clock: convert envelope event_ts → “replay now” based on speed (0.5x–16x), and allow
+        broadcast delay offsets.
+      • UI: a single “live” UI should also work in replay by switching the “clock source”.
+
+OpenF1.Data’s documented record/replay model (subscribe snapshot + append log with calculated
+delay) is a workable template. 44
+
+
+MVP roadmap, QA/test matrix, and risk register
+
+Enterprise MVP definition (12–20 weeks; baseline plan 16 weeks)
+
+Scope (MVP): - Canonical schema v1 + mapping for OpenF1 + Jolpica + FIA PDFs (demo import) - Replay
+hub + WebSocket gateway + subscription control/backpressure - Web SPA with premium components:
+timing tower, telemetry canvas, stint/pit charts, race-control feed, driver cards, highlight cards - Security
+baseline: CSP, token handling, RBAC scaffolding, audit logs - Observability baseline: tracing IDs, metrics
+dashboards, alerting rules - Deterministic replay tests + accessibility tests + load tests
+
+
+Milestones table (baseline 16-week plan starting 2026-03-17)
+
+  Milestone                   Duration      Deliverables
+
+                                            Repo + CI, design tokens baseline, canonical schema v1,
+  Foundation                      2 wks
+                                            gateway contract
+
+  Data ingest & replay                      OpenF1 importer, Jolpica importer, replay clock service, log
+                                  3 wks
+  core                                      format
+
+                                            Timing tower + race control + track map + driver cards;
+  UI core dashboards              4 wks
+                                            responsive shell
+
+                                            Canvas/WebGL telemetry traces, stint/pit timeline charts,
+  Telemetry + charts              3 wks
+                                            performance budgets enforced
+
+                                            SSO/OIDC integration plan, RBAC model, audit logs, CSP
+  Enterprise scaffolding          2 wks
+                                            hardening
+
+  QA hardening + demo                       Determinism suite, load tests, a11y tests, packaging
+                                  2 wks
+  release                                   (optional desktop)
+
+
+Gantt-style timeline (mermaid)
+
+
+  gantt
+    title Enterprise MVP (16 weeks) - Live + Replay UI
+
+
+
+
+                                                      17
+     dateFormat    YYYY-MM-DD
+     axisFormat    %d %b
+
+     section Foundations
+     Repo/CI + Design Tokens                      :a1, 2026-03-17, 14d
+     Canonical Schema v1 + Contracts              :a2, 2026-03-17, 14d
+
+     section Data + Replay
+     OpenF1 ingest (REST) + storage               :b1, after a2, 14d
+     OpenF1 live stream collector                 :b2, after b1, 7d
+     Jolpica ingest + caching/backoff             :b3, after b1, 7d
+     Replay clock + determinism harness           :b4, after b1, 14d
+
+     section Frontend UI
+     Timing tower + race control + cards :c1, after a1, 21d
+     Track map + stint/pit charts        :c2, after c1, 21d
+     Telemetry canvas (worker + buffers) :c3, after c1, 21d
+
+     section Enterprise Readiness
+     AuthN/AuthZ/RBAC scaffolding                 :d1, after c1, 14d
+     Observability instrumentation                :d2, after c1, 14d
+     Security hardening (CSP, desktop)            :d3, after d1, 14d
+
+     section QA + Release
+     Load + replay determinism + a11y             :e1, after c2, 14d
+     Demo release / packaging                     :e2, after e1, 7d
+
+
+Resource estimates (developer-weeks by role)
+
+                               MVP effort (dev-
+  Role                                             Notes
+                                       weeks)
+
+                                                   Component system, perf budgets, real-time
+  Frontend lead                          14–18
+                                                   patterns
+
+  Backend/stream                                   WebSocket gateway, replay clock, subscription
+                                         10–14
+  engineer                                         controls
+
+                                                   Importers, schema mapping, storage layout, FIA
+  Data engineer                            8–12
+                                                   extraction
+
+  UX/Visual designer                        4–8    Tokens, layouts, motion system, a11y review
+
+  QA/Automation                             4–8    Determinism, load, a11y, visual regression
+
+  DevOps/SRE                                3–6    CI/CD, observability stack, secrets, environments
+
+
+QA strategy and test matrix
+
+Core QA pillars:
+
+
+1) Replay determinism: same input log produces identical state snapshots at fixed replay times.
+2) Load and latency: subscription fanout load tests, message queue growth, client FPS thresholds.
+
+
+
+                                                  18
+3) Accessibility (WCAG 2.2): keyboard nav, contrast, focus visibility, screen-reader labelling.        22
+
+4) Security: CSP evaluation, dependency scanning, token handling review.
+
+
+Test matrix (minimum):
+
+
+         Category          Cases
+
+         Browsers          Latest Chrome/Edge/Firefox/Safari
+
+         Devices           Desktop 1080p & 4K, tablet, mobile
+
+         Modes             Live, replay 1x/4x/16x, offline dataset
+
+         Data loss         Topic dropouts, reconnect storms, partial updates ( _key upserts)           36
+
+
+
+         Performance       “Lite mode” toggle, decimation thresholds, worker fallback
+
+         a11y              Keyboard-only flow, reduced motion, colour-blind palette check
+
+
+Risk register (high-impact items)
+
+  Risk                         Likelihood     Impact          Mitigation
+
+                                                              Legal gate: use only compliant sources for MVP;
+  Licensing breach (live
+                                                              procure licensed feed for commercial; add kill-
+  timing, substantial                High     Critical
+                                                              switch per source; ship non-commercial demo
+  reproduction)
+                                                              disclaimers. 79
+
+                                                              Separate “AI insights” from any restricted
+  AI restrictions (text/
+                                                              datasets; obtain express licences; document
+  data-mining with F1                High     Critical
+                                                              provenance; do not train models on restricted
+  rights)
+                                                              data without rights. 80
+
+                                                              Caching + backoff; schema versioning; adapters
+  Upstream churn/rate
+                                   Medium       High          per source; contract tests; Jolpica rate-limit
+  limits
+                                                              controls. 81
+
+                                                              Backpressure; worker parsing; ring buffers;
+  UI jank under burst
+                                   Medium       High          10ms/frame budget; decimation; progressive
+  updates
+                                                              render. 82
+
+  Desktop security                                            Least privilege (Tauri permissions/capabilities);
+                                   Medium       High
+  regressions (IPC abuse)                                     CSP; secure defaults. 83
+
+  Multi-tenant data                                           Tenant-scoped keys, RBAC tests, audit logging
+                                   Medium       High
+  isolation bugs                                              and access traces. 84
+
+
+Immediate next steps checklist
+
+      • Confirm intended usage (non-commercial demo vs commercial product) and run a licensing
+        gate review for each data source before implementing live features. 85
+      • Provide (or decide) demo targets:
+      • 2–3 historical sessions (OpenF1 session_key s) and one race weekend to package as a replay
+        dataset. 39
+      • Any OpenF1 sponsor credentials (username/password) if you want to test live MQTT/WSS.                86
+
+
+
+
+                                                         19
+          • If considering a commercial feed: request Sportradar sandbox credentials and gRPC stream
+            specs. 87
+          • Lock the “UI contract”: canonical envelope v1 + subscription API + backpressure semantics (one-
+            page spec).
+          • Build the skeleton:
+          • WebSocket gateway + replay clock service (even before fancy UI).
+          • A “timing tower + race control feed” vertical slice fed solely by replay logs.
+          • Establish performance and a11y budgets in CI:
+          • Lighthouse/perf checks (budgets), a11y automated checks, and a deterministic replay test suite.
+            88
+
+
+
+
+ 1    5     6    7    40   41   54   77   https://openf1.org/
+https://openf1.org/
+
+ 2   36     37   38   62   71   86   https://openf1.org/auth.html
+https://openf1.org/auth.html
+
+ 3   23     33   82   Measure performance with the RAIL model | Articles | web.dev
+https://web.dev/articles/rail
+
+ 4   64    https://datatracker.ietf.org/doc/html/rfc6749
+https://datatracker.ietf.org/doc/html/rfc6749
+
+ 8   58    https://github.com/jolpica/jolpica-f1/blob/main/TERMS.md
+https://github.com/jolpica/jolpica-f1/blob/main/TERMS.md
+
+ 9   79     80   85   https://www.formula1.com/en/information/guidelines.4EOKE9RRqevL4niTK9kWyt
+https://www.formula1.com/en/information/guidelines.4EOKE9RRqevL4niTK9kWyt
+
+10 https://www.formula1.com/en/information/f1-tv-subscription-terms-
+us-2024.384sQqjslhQ2Rhm1LdKgfD
+https://www.formula1.com/en/information/f1-tv-subscription-terms-us-2024.384sQqjslhQ2Rhm1LdKgfD
+
+11   83    Permissions | Tauri
+https://v2.tauri.app/security/permissions/
+
+12   Security | Electron
+https://electronjs.org/docs/latest/tutorial/security
+
+13   https://v2.tauri.app/plugin/updater/
+https://v2.tauri.app/plugin/updater/
+
+14   https://electronjs.org/docs/latest/api/auto-updater
+https://electronjs.org/docs/latest/api/auto-updater
+
+15   https://electronjs.org/
+https://electronjs.org/
+
+16   https://v2.tauri.app/reference/webview-versions/
+https://v2.tauri.app/reference/webview-versions/
+
+17   https://vitejs.dev/guide/why
+https://vitejs.dev/guide/why
+
+18   https://nextjs.org/docs/app
+https://nextjs.org/docs/app
+
+
+
+
+                                                                20
+19   https://svelte.dev/docs/kit
+https://svelte.dev/docs/kit
+
+20   https://docs.flutter.dev/platform-integration/desktop
+https://docs.flutter.dev/platform-integration/desktop
+
+21   https://www.qt.io/
+https://www.qt.io/
+
+22   88   Understanding Success Criterion 1.4.3: Contrast (Minimum) | WAI | W3C
+https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html
+
+24   https://developer.mozilla.org/en-US/docs/Web/Performance/Guides/How_long_is_too_long
+https://developer.mozilla.org/en-US/docs/Web/Performance/Guides/How_long_is_too_long
+
+25   https://developer.mozilla.org/en-US/docs/Web/Performance/Guides/Fundamentals
+https://developer.mozilla.org/en-US/docs/Web/Performance/Guides/Fundamentals
+
+26   https://formula-timer.com/livetiming
+https://formula-timer.com/livetiming
+
+27   https://www.f1livepulse.com/en/features/sync-mode/
+https://www.f1livepulse.com/en/features/sync-mode/
+
+28   https://github.com/JustAman62/undercut-f1
+https://github.com/JustAman62/undercut-f1
+
+29   https://multiviewer.app/
+https://multiviewer.app/
+
+30   34   https://www.formula1.com/en/timing/f1-live
+https://www.formula1.com/en/timing/f1-live
+
+31   45   59   https://github.com/theOehrly/Fast-F1/blob/master/fastf1/livetiming/client.py
+https://github.com/theOehrly/Fast-F1/blob/master/fastf1/livetiming/client.py
+
+32   https://github.com/F1Dash
+https://github.com/F1Dash
+
+35   Improved Live Timing on F1.com for the 2022 season
+https://www.formula1.com/en/latest/article/improved-live-timing-on-f1-com-for-the-2022-season.
+3Y1ipx839mv7xeteTqQ8Mk?utm_source=chatgpt.com
+
+39   42   55   56   68   https://openf1.org/docs/
+https://openf1.org/docs/
+
+43   44   67   https://www.nuget.org/packages/OpenF1.Data/1.0.26
+https://www.nuget.org/packages/OpenF1.Data/1.0.26
+
+46   https://docs.fastf1.dev/time_explanation.html
+https://docs.fastf1.dev/time_explanation.html
+
+47   48   https://github.com/jolpica/jolpica-f1
+https://github.com/jolpica/jolpica-f1
+
+49    https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/
+     50
+
+season/season-2026-2072
+https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2026-2072
+
+51  https://www.fia.com/system/files/decision-document/2026_chinese_grand_prix_-
+_final_race_classification.pdf
+https://www.fia.com/system/files/decision-document/2026_chinese_grand_prix_-_final_race_classification.pdf
+
+
+
+
+                                                            21
+52   87   https://docs.sportradar.com/live-data/introduction/information-per-sport/f1
+https://docs.sportradar.com/live-data/introduction/information-per-sport/f1
+
+53   https://developer.sportradar.com/getting-started/docs/make-your-first-call
+https://developer.sportradar.com/getting-started/docs/make-your-first-call
+
+57   61   81   https://github.com/jolpica/jolpica-f1/discussions/80
+https://github.com/jolpica/jolpica-f1/discussions/80
+
+60   https://github.com/theOehrly/Fast-F1/blob/main/LICENSE
+https://github.com/theOehrly/Fast-F1/blob/main/LICENSE
+
+63   https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
+https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
+
+65   https://openid.net/specs/openid-connect-core-1_0.html
+https://openid.net/specs/openid-connect-core-1_0.html
+
+66   84   https://csrc.nist.gov/glossary/term/role_based_access_control
+https://csrc.nist.gov/glossary/term/role_based_access_control
+
+69  https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/childrens-information/
+childrens-code-guidance-and-resources/age-appropriate-design-a-code-of-practice-for-online-services/
+8-data-minimisation/
+https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/childrens-information/childrens-code-guidance-and-
+resources/age-appropriate-design-a-code-of-practice-for-online-services/8-data-minimisation/
+
+70 https://ico.org.uk/for-organisations/law-enforcement/guide-to-le-processing/accountability-and-
+governance/logging/what-is-logging/
+https://ico.org.uk/for-organisations/law-enforcement/guide-to-le-processing/accountability-and-governance/logging/what-
+is-logging/
+
+72   https://docs.sentry.io/platforms/javascript/tracing/
+https://docs.sentry.io/platforms/javascript/tracing/
+
+73   https://www.honeycomb.io/resources/getting-started/getting-started-distributed-tracing
+https://www.honeycomb.io/resources/getting-started/getting-started-distributed-tracing
+
+74   GitHub - plotly/plotly.js: Open-source JavaScript charting library behind Plotly and Dash · GitHub
+https://github.com/plotly/plotly.js/
+
+75   d3-selection/LICENSE at main · d3/d3-selection · GitHub
+https://github.com/d3/d3-selection/blob/master/LICENSE
+
+76   Apache ECharts
+https://echarts.apache.org/
+
+78   Highcharts
+https://shop.highcharts.com/license-eula
+
+
+
+
+                                                            22
+

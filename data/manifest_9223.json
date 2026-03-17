@@ -1,0 +1,269 @@
+{
+  "schema_version": "1.0",
+  "dataset_name": "openf1_session_9223",
+  "created_utc": "2026-03-17T12:07:31.107Z",
+  "year": 2023,
+  "session_name": "Practice 1",
+  "date_start_utc": "2023-07-21T11:30:00+00:00",
+  "date_end_utc": "2023-07-21T12:30:00+00:00",
+  "import_profile": "lite",
+  "meeting_key": 1215,
+  "session_key": 9223,
+  "session_type": "Practice",
+  "circuit_short_name": "Hungaroring",
+  "drivers": [
+    {
+      "number": 1,
+      "code": "ARO",
+      "name": "Paul ARON",
+      "team": "Red Bull Racing",
+      "team_color": "3671C6"
+    },
+    {
+      "number": 2,
+      "code": "BEG",
+      "name": "Dino BEGANOVIC",
+      "team": "Williams",
+      "team_color": "37BEDD"
+    },
+    {
+      "number": 3,
+      "code": "OSU",
+      "name": "Zak O'SULLIVAN",
+      "team": "AlphaTauri",
+      "team_color": "5E8FAA"
+    },
+    {
+      "number": 4,
+      "code": "FOR",
+      "name": "Leonardo FORNAROLI",
+      "team": "McLaren",
+      "team_color": "F58020"
+    },
+    {
+      "number": 10,
+      "code": "FCO",
+      "name": "Franco COLAPINTO",
+      "team": "Alpine",
+      "team_color": "2293D1"
+    },
+    {
+      "number": 11,
+      "code": "BOY",
+      "name": "Mari BOYA",
+      "team": "Red Bull Racing",
+      "team_color": "3671C6"
+    },
+    {
+      "number": 14,
+      "code": "MON",
+      "name": "Sebastian MONTOYA",
+      "team": "Aston Martin",
+      "team_color": "358C75"
+    },
+    {
+      "number": 16,
+      "code": "BRO",
+      "name": "Luke BROWNING",
+      "team": "Ferrari",
+      "team_color": "F91536"
+    },
+    {
+      "number": 18,
+      "code": "VIL",
+      "name": "Rafael VILLAGOMEZ",
+      "team": "Aston Martin",
+      "team_color": "358C75"
+    },
+    {
+      "number": 20,
+      "code": "GRA",
+      "name": "Oliver GRAY",
+      "team": "Haas F1 Team",
+      "team_color": "B6BABD"
+    },
+    {
+      "number": 22,
+      "code": "COH",
+      "name": "Ido COHEN",
+      "team": "AlphaTauri",
+      "team_color": "5E8FAA"
+    },
+    {
+      "number": 23,
+      "code": "MAR",
+      "name": "Josep Maria MARTI",
+      "team": "Williams",
+      "team_color": "37BEDD"
+    },
+    {
+      "number": 24,
+      "code": "MAN",
+      "name": "Christian MANSELL",
+      "team": "Alfa Romeo",
+      "team_color": "C92D4B"
+    },
+    {
+      "number": 27,
+      "code": "TBA",
+      "name": "Taylor BARNARD",
+      "team": "Haas F1 Team",
+      "team_color": "B6BABD"
+    },
+    {
+      "number": 31,
+      "code": "SHI",
+      "name": "Woohyun SHIN",
+      "team": "Alpine",
+      "team_color": "2293D1"
+    },
+    {
+      "number": 44,
+      "code": "HAM",
+      "name": "Lewis HAMILTON",
+      "team": "Mercedes",
+      "team_color": "6CD3BF"
+    },
+    {
+      "number": 55,
+      "code": "SAI",
+      "name": "Carlos SAINZ",
+      "team": "Ferrari",
+      "team_color": "F91536"
+    },
+    {
+      "number": 63,
+      "code": "RUS",
+      "name": "George RUSSELL",
+      "team": "Mercedes",
+      "team_color": "6CD3BF"
+    },
+    {
+      "number": 77,
+      "code": "BOT",
+      "name": "Valtteri BOTTAS",
+      "team": "Alfa Romeo",
+      "team_color": "C92D4B"
+    },
+    {
+      "number": 81,
+      "code": "PIA",
+      "name": "Oscar PIASTRI",
+      "team": "McLaren",
+      "team_color": "F58020"
+    },
+    {
+      "number": 5,
+      "code": "BOR",
+      "name": "Gabriel BORTOLETO",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 6,
+      "code": "GOE",
+      "name": "Oliver GOETHE",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 7,
+      "code": "FRE",
+      "name": "Kaylen FREDERICK",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 8,
+      "code": "SAU",
+      "name": "Gregoire SAUCY",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 9,
+      "code": "TSO",
+      "name": "Nikola TSOLOV",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 12,
+      "code": "EDG",
+      "name": "Jonny EDGAR",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 15,
+      "code": "MIN",
+      "name": "Gabriele MINI",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 17,
+      "code": "CCO",
+      "name": "Caio COLLET",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 19,
+      "code": "SMI",
+      "name": "Tommy SMITH",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 21,
+      "code": "EST",
+      "name": "Maxwell ESTERSON",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 25,
+      "code": "HBA",
+      "name": "Hugh BARTER",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 26,
+      "code": "BED",
+      "name": "Nikita BEDRIN",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 28,
+      "code": "GAR",
+      "name": "Alejandro GARCIA",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 29,
+      "code": "FLO",
+      "name": "Sophia FLOERSCH",
+      "team": null,
+      "team_color": null
+    },
+    {
+      "number": 30,
+      "code": "FAR",
+      "name": "Roberto FARIA",
+      "team": null,
+      "team_color": null
+    }
+  ],
+  "source_priority": [
+    "openf1"
+  ],
+  "time_basis": "utc",
+  "files": {
+    "events_jsonl": "events_9223.jsonl",
+    "manifest_json": "manifest_9223.json"
+  }
+}

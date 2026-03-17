@@ -1,0 +1,17 @@
+{
+  "name": "@f1-insights/replay-orchestrator",
+  "version": "0.1.0",
+  "description": "Replay state management and WebSocket service",
+  "type": "module",
+  "main": "./dist/services/replay-orchestrator/src/index.js",
+  "types": "./dist/services/replay-orchestrator/src/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "private": true,
+  "dependencies": {
+    "@f1-insights/schemas": "workspace:*",
+    "@f1-insights/replay-sdk": "workspace:*"
+  }
+}

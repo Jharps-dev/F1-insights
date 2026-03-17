@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "lib": ["ES2022"],
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@f1-insights/schemas": ["packages/schemas/src"],
+      "@f1-insights/replay-sdk": ["packages/replay-sdk/src"],
+      "@f1-insights/replay-orchestrator": ["services/replay-orchestrator/src"],
+      "@f1-insights/ingest-openf1": ["services/ingest-openf1/src"],
+      "@f1-insights/observability": ["packages/observability/src"],
+      "@f1-insights/design-system": ["packages/design-system/src"]
+    },
+    "types": ["node"]
+  }
+}

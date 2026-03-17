@@ -1,0 +1,164 @@
+{
+  "schema_version": "1.0",
+  "dataset_name": "openf1_session_9987",
+  "created_utc": "2026-03-17T13:07:44.194Z",
+  "year": 2025,
+  "session_name": "Race",
+  "date_start_utc": "2025-05-18T13:00:00+00:00",
+  "date_end_utc": "2025-05-18T15:00:00+00:00",
+  "import_profile": "lite",
+  "meeting_key": 1260,
+  "session_key": 9987,
+  "session_type": "Race",
+  "circuit_short_name": "Imola",
+  "drivers": [
+    {
+      "number": 1,
+      "code": "VER",
+      "name": "Max VERSTAPPEN",
+      "team": "Red Bull Racing",
+      "team_color": "3671C6"
+    },
+    {
+      "number": 4,
+      "code": "NOR",
+      "name": "Lando NORRIS",
+      "team": "McLaren",
+      "team_color": "FF8000"
+    },
+    {
+      "number": 5,
+      "code": "BOR",
+      "name": "Gabriel BORTOLETO",
+      "team": "Kick Sauber",
+      "team_color": "52E252"
+    },
+    {
+      "number": 6,
+      "code": "HAD",
+      "name": "Isack HADJAR",
+      "team": "Racing Bulls",
+      "team_color": "6692FF"
+    },
+    {
+      "number": 10,
+      "code": "GAS",
+      "name": "Pierre GASLY",
+      "team": "Alpine",
+      "team_color": "0093CC"
+    },
+    {
+      "number": 12,
+      "code": "ANT",
+      "name": "Kimi ANTONELLI",
+      "team": "Mercedes",
+      "team_color": "27F4D2"
+    },
+    {
+      "number": 14,
+      "code": "ALO",
+      "name": "Fernando ALONSO",
+      "team": "Aston Martin",
+      "team_color": "229971"
+    },
+    {
+      "number": 16,
+      "code": "LEC",
+      "name": "Charles LECLERC",
+      "team": "Ferrari",
+      "team_color": "E80020"
+    },
+    {
+      "number": 18,
+      "code": "STR",
+      "name": "Lance STROLL",
+      "team": "Aston Martin",
+      "team_color": "229971"
+    },
+    {
+      "number": 22,
+      "code": "TSU",
+      "name": "Yuki TSUNODA",
+      "team": "Red Bull Racing",
+      "team_color": "3671C6"
+    },
+    {
+      "number": 23,
+      "code": "ALB",
+      "name": "Alexander ALBON",
+      "team": "Williams",
+      "team_color": "64C4FF"
+    },
+    {
+      "number": 27,
+      "code": "HUL",
+      "name": "Nico HULKENBERG",
+      "team": "Kick Sauber",
+      "team_color": "52E252"
+    },
+    {
+      "number": 30,
+      "code": "LAW",
+      "name": "Liam LAWSON",
+      "team": "Racing Bulls",
+      "team_color": "6692FF"
+    },
+    {
+      "number": 31,
+      "code": "OCO",
+      "name": "Esteban OCON",
+      "team": "Haas F1 Team",
+      "team_color": "B6BABD"
+    },
+    {
+      "number": 43,
+      "code": "COL",
+      "name": "Franco COLAPINTO",
+      "team": "Alpine",
+      "team_color": "0093CC"
+    },
+    {
+      "number": 44,
+      "code": "HAM",
+      "name": "Lewis HAMILTON",
+      "team": "Ferrari",
+      "team_color": "E80020"
+    },
+    {
+      "number": 55,
+      "code": "SAI",
+      "name": "Carlos SAINZ",
+      "team": "Williams",
+      "team_color": "64C4FF"
+    },
+    {
+      "number": 63,
+      "code": "RUS",
+      "name": "George RUSSELL",
+      "team": "Mercedes",
+      "team_color": "27F4D2"
+    },
+    {
+      "number": 81,
+      "code": "PIA",
+      "name": "Oscar PIASTRI",
+      "team": "McLaren",
+      "team_color": "FF8000"
+    },
+    {
+      "number": 87,
+      "code": "BEA",
+      "name": "Oliver BEARMAN",
+      "team": "Haas F1 Team",
+      "team_color": "B6BABD"
+    }
+  ],
+  "source_priority": [
+    "openf1"
+  ],
+  "time_basis": "utc",
+  "files": {
+    "events_jsonl": "events_9987.jsonl",
+    "manifest_json": "manifest_9987.json"
+  }
+}

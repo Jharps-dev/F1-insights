@@ -1,0 +1,27 @@
+{
+  "name": "f1-insights",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "dev:web": "pnpm --filter f1-insights-web dev",
+    "dev:server": "pnpm --filter @f1-insights/api-gateway dev",
+    "test:smoke:api": "node ./tools/testing/run-api-smoke-local.mjs",
+    "test:smoke:api:against": "pnpm --filter @f1-insights/api-gateway exec node ./tools/api-ws-smoke.mjs",
+    "import:openf1": "tsx ./services/ingest-openf1/src/cli.ts",
+    "import:openf1:lite": "tsx ./services/ingest-openf1/src/cli.ts --profile lite",
+    "import:openf1:year": "tsx ./services/ingest-openf1/src/cli.ts --profile lite",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test:replay": "pnpm --filter @f1-insights/replay-sdk test",
+    "ship:dev": "pwsh ./tools/release/ship.ps1 -TargetBranch dev",
+    "release": "pwsh ./tools/release/release.ps1 -Version 0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

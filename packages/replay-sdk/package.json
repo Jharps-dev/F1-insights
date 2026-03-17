@@ -1,0 +1,16 @@
+{
+  "name": "@f1-insights/replay-sdk",
+  "version": "0.1.0",
+  "description": "Deterministic replay engine for F1 data",
+  "type": "module",
+  "main": "./dist/replay-sdk/src/index.js",
+  "types": "./dist/replay-sdk/src/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "private": true,
+  "dependencies": {
+    "@f1-insights/schemas": "workspace:*"
+  }
+}

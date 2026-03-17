@@ -1,0 +1,917 @@
+Project plan for an F1 insights system
+Executive summary
+This project plan delivers a buildable path to an F1 insights system that supports (a) ingestion from
+reputable community/official artefacts, (b) a canonical schema + replay hub, (c) a premium
+(“swanky”) web UI with an optional desktop wrapper, and (d) an AI/analytics layer that works
+deterministically on replayed sessions.
+
+
+The plan is deliberately replay-first because live F1 timing ecosystems are operationally and legally
+volatile. A concrete example is the documented shift in what data is “freely published” on the live feed
+for some community clients since the 2025 Dutch Grand Prix, which is exactly the kind of upstream
+change that can derail a live-first build. 1
+
+
+Legally, a commercial direction is a gating constraint, not a “later” feature. Formula 1 2 ’s official
+guidelines say that “Statistics, Results and Timing Data” are protected and that substantial
+reproduction/commercial use via scraping is not permitted; its guidelines also explicitly restrict use of
+“FORMULA 1 Rights” for text-and-data mining and in/with AI without an express licence. 3 The F1 TV
+subscription terms (US 2024 example) also include an explicit prohibition on text/data mining and web
+scraping. 4
+
+
+Accordingly, the MVP is defined as a demo/replay product that uses: - OpenF1 (2023+ historical, free)
+for core tracks, telemetry and events, licensed CC BY‑NC‑SA 4.0, with clear sampling-rate and delay
+disclosures. 5
+- FastF1 for post-session processing/caching and to record raw live timing streams for later replay
+processing (not real-time use). 6
+- Jolpica (Ergast-compatible) for schedules/results metadata under explicit non-commercial terms and
+published rate limits (4 req/s burst, 500 req/hour sustained unauth). 7
+- FIA 8 PDF documents for authoritative classifications/decisions (excellent for a “Documents” pane
+and for validation). 9
+
+
+A desktop wrapper is optional for MVP. If chosen, this plan recommends an SPA-first UI with optional
+Tauri packaging: Tauri uses the system WebView (WKWebView / WebView2 / WebKitGTK, etc.) and
+provides a security model anchored by CSP/capabilities/permissions. 10 Electron remains viable if you
+want a consistent bundled runtime; Electron explicitly bundles Chromium and Node.js, and its security
+checklist (CSP, context isolation, sandboxing) must be treated as non-negotiable. 11
+
+
+Assumptions, scope, and success criteria
+
+Assumptions
+
+     • Date baseline: 16 March 2026 (Europe/London).
+     • Target audience is open-ended: internal demo, community demo, or future commercial product.
+       This plan treats commercialisation as post-MVP unless licensing is secured (see legal gating).
+        12
+
+
+
+
+                                                   1
+      • Initial data availability is constrained to: OpenF1 (2023+), Jolpica (historical metadata), FastF1
+        post-session/replay, FIA documents. 13
+      • Live-first features are considered optional and gated, because community projects report partial
+        live-feed restrictions without an active F1TV subscription. 1
+      • The primary UI language is en‑GB; localisation is limited to en‑GB for MVP (date/time, number
+        formatting, units) with a scalable i18n framework.
+
+Scope
+
+In scope (MVP + foundations): - Data importers (OpenF1, Jolpica, FIA PDFs, FastF1 exports/recordings).
+ 14
+
+- Canonical schema and mapping layer (event log + state projections).
+- Replay hub (“session player”): deterministic clock, seek/scrub, WebSocket streaming to clients.
+- Premium UI: timing tower, driver inspector, telemetry chart canvas, stint/pit strategy views, race
+control feed, documents pane.
+- Analytics V1: derived metrics and heuristics (stint pace, deltas, pit windows), plus a thin AI layer for
+summarisation/highlights on replayed sessions (bounded, audit-friendly, not reliant on prohibited data
+mining). 15
+
+
+Explicitly out-of-scope for MVP unless licensed: - Direct use of F1 digital product rights/content beyond
+what is permitted (especially “substantial” timing data reuse in commercial contexts or AI training on
+Formula 1 digital product data). 16
+- Public redistribution of raw datasets from sources that are “non-commercial only” (OpenF1, Jolpica)
+without ensuring licence compliance.    17
+
+
+
+
+Success criteria (measurable)
+
+Functional: - Import and replay at least three sessions end-to-end (e.g., Practice, Qualifying, Race) fully
+offline from stored artefacts.
+- Replay controls: play/pause, 0.5×/1×/2×/8× speed, seek-to-time, jump-to-event.
+- UI parity for core components: timing tower, driver card, telemetry view, stints/pits, race control,
+documents.
+
+
+Quality: - Replay determinism: identical inputs → identical derived state timelines (hash checks across
+runs).
+- UI performance: animation budget consistent with RAIL guidance (aim for ~10ms JS per frame for
+60fps class interactions) and stable telemetry rendering; avoid frame drops under typical session
+payload. 18
+- Accessibility: meets WCAG contrast guidance for 4.5:1 (normal text) and 3:1 (large text), keyboard
+navigation for critical controls, and non-colour indicators for sector state. 19
+
+
+Compliance: - In-app disclaimers and attribution for OpenF1/Jolpica licences and explicit prohibition on
+commercial use without proper licensing. 20
+
+
+Stakeholders, roles, and governance
+
+Stakeholders
+
+      • Product owner (defines MVP demo narrative and feature priorities).
+      • Technical lead / architect (owns system design, non-functional requirements, risk closure).
+      • Data & platform owners (ingestion, schema, replay determinism).
+
+
+
+                                                    2
+     • UI/UX and design system owner (premium look/feel and accessibility).
+     • Legal/compliance stakeholder (ensures usage remains within non-commercial terms, and drives
+       licensing procurement if commercial). 21
+
+Roles (recommended “balanced” team)
+
+     • Tech lead (full-stack, architecture, delivery governance)
+     • Data engineer (importers, canonical mapping, QA of data correctness)
+     • Backend engineer (replay hub, WebSocket API, storage, observability)
+     • Frontend engineer (premium UI, rendering performance, accessibility)
+     • UX designer (design system, layout, interaction)
+     • Data scientist / ML engineer (analytics layer, evaluation harness, model serving boundaries)
+     • QA / test engineer (replay determinism, load, accessibility audits)
+
+Governance: - Two-week sprints, with sprint-level demo increments (replayable sessions).
+- “Definition of done” includes: schema versioned, replay test updated, perf budget checked, licence
+notices unchanged unless reviewed.
+
+
+Architecture, data-provider integration, and canonical schema
+work
+
+Architecture overview
+
+The system is split into Import → Canonical Event Log → Projections/State → Replay Hub → UI/
+Analytics.
+
+
+
+  flowchart LR
+    subgraph Sources
+      O[OpenF1 REST JSON/CSV]:::src
+      J[Jolpica REST (Ergast-compatible)]:::src
+      F[FastF1 post-session cache/exports]:::src
+      P[FIA PDFs]:::src
+      L[Optional licensed provider]:::src
+    end
+
+    subgraph Import_and_Normalise
+      I[Import adapters<br/>rate limit + caching + retries]:::svc
+      M[Canonical mapper<br/>schema v1]:::svc
+    end
+
+    subgraph Storage
+      E[(Append-only Event Log<br/>JSONL/Parquet)]:::db
+      R[(Replay indices<br/>SQLite)]:::db
+      D[(Docs store<br/>PDF + extracted text)]:::db
+    end
+
+    subgraph Replay_and_Serving
+      C[Replay clock + seek/scrub]:::svc
+      S[State builder<br/>timing/stints/pits]:::svc
+      W[WebSocket API<br/>state deltas]:::svc
+
+
+
+
+                                                   3
+      A[Analytics/AI service<br/>batch + realtime]:::svc
+    end
+
+    subgraph Clients
+      UI[SPA UI<br/>+ optional Tauri wrapper]:::ui
+    end
+
+    O-->I
+    J-->I
+    F-->I
+    P-->I
+    L-->I
+
+    I-->M
+    M-->E
+    M-->D
+    E-->R
+
+    E-->S
+    R-->C
+    C-->W
+    S-->W
+    A-->W
+    W-->UI
+
+    classDef src fill:#222,stroke:#666,color:#ddd;
+    classDef svc fill:#1f2a44,stroke:#6b8cff,color:#fff;
+    classDef db fill:#1e3a2a,stroke:#5dd39e,color:#fff;
+    classDef ui fill:#3a1f2a,stroke:#ff6b9d,color:#fff;
+
+
+Frontend platform decision
+
+This plan recommends SPA-first with optional desktop packaging.
+
+
+     • Tauri: system WebView approach (e.g., WKWebView, WebView2, WebKitGTK), documented
+       process model and security features like CSP and capabilities/permissions. 22
+     • Electron: bundles Chromium and Node.js; reasoned trade-off is consistent runtime vs package
+       size, with an explicit security checklist (CSP, context isolation, sandboxing).   11
+
+
+
+Decision rule: - If the demo must be offline-first and distributed as an installer with dataset bundles →
+include Tauri packaging in MVP. 23
+- If runtime consistency across all user machines is paramount and you can accept a larger bundle →
+consider Electron, but adopt best practices from day one. 24
+
+
+Data-provider integration plan (demo pathways)
+
+OpenF1 (core demo feed) - Scope: telemetry, laps, weather, race control, positions (2023+). OpenF1
+documents a 3.7 Hz telemetry sampling rate and ~3-second live delay (for live contexts), plus JSON/CSV
+support and 2023+ coverage. 5
+- Access: REST for historical; authenticated streaming via MQTT/WebSocket requires OAuth2 token
+workflow. 25
+
+
+
+
+                                                      4
+- Licence: CC BY‑NC‑SA 4.0; stated as unofficial and intended for educational/research/non-commercial
+fan engagement. 26
+
+
+FastF1 (post-session and replay-friendly) - Scope: transforms timing/telemetry into analysis-friendly
+dataframes, with caching/rate limit system. 27
+- Critical constraint: its live timing client saves raw messages and explicitly says it is not possible to use
+this data during a session; processing happens after session load. 28
+
+
+Jolpica (historical metadata) - Scope: schedules/results/standings style metadata, Ergast-compatible
+base path. 29
+- Rate limits: unauth burst 4 req/s, sustained 500 req/hour. 30
+- Terms: non-commercial use; CC BY‑NC‑SA 4.0; volunteer-run with no guarantee of correctness/uptime.
+ 7
+
+
+
+
+FIA PDFs (official documents) - Scope: authoritative classifications/decisions and a strong “Documents”
+UI module. The FIA’s decision documents pages list documents by season/event. 9
+
+
+Optional licensed provider (commercial track) - If commercialisation is a target, plan a parallel
+procurement workstream. Example: Sportradar 31 markets official F1 data and low-latency feeds
+(including gRPC event stream documentation for F1 live data). 32
+- This is a contract/SLA and integration effort; treat it as a milestone with gating criteria (see below).
+
+
+Canonical schema and mapping tasks
+
+Canonical   schema     (v1)   must   support:   -   Append-only    event   log   with    event_time_utc ,
+ingest_time_utc , session_id , driver_id , kind , payload . - Versioning and backward-
+compatible decoding (schema evolution). - Dual-time handling: source event time + replay time (for
+deterministic clock).
+
+
+Mapping tasks: - Identity resolution: unify driver_number , driver_code , team naming across
+feeds; Jolpica can seed canonical driver/team IDs and schedule keys. 29
+- Time alignment: OpenF1 uses timestamped records; FastF1 often includes session-relative time
+constructs and has specific time explanations to respect (convert reliably). 33
+- Cross-validation: compare derived classification vs FIA PDFs where feasible (post-session). 9
+
+
+Milestones, timeline, and deliverables
+
+MVP definition (what “done” means)
+
+MVP = reproducible demo system that can: - Import and replay selected sessions (offline) with
+deterministic state projection. - Provide a premium UI with the named components. - Provide analytics
+V1 (derived metrics + light AI summaries) on replay. - Ship as a web build and optionally as a desktop
+installer, with licence notices and non-commercial constraints.
+
+
+Milestone table (dates and durations)
+
+Assuming project start Monday 23 March 2026, two-week sprints.
+
+
+
+
+                                                      5
+ Milestone                Dates    Duration   Deliverables
+
+                        23 Mar –              Scope baseline; source ToU review; non-
+ Initiation and
+                          03 Apr     2 wks    commercial demo disclaimer text; decision on
+ licensing gate
+                           2026               “desktop vs web-only MVP”; dataset selection
+
+ Canonical schema       06 Apr –              Schema spec; JSONL event log format; import
+ v1 + import             17 Apr      2 wks    harness with retries/backoff/caching; initial
+ scaffolding               2026               OpenF1 importer working 34
+
+                        20 Apr –
+ Jolpica + FIA                                Jolpica importer with rate-limit compliance; FIA
+                         01 May      2 wks
+ ingestion                                    document fetch + metadata indexer 35
+                           2026
+
+                        04 May –              Replay clock (seek/scrub); state builder for timing
+ Replay hub v1 +
+                         15 May      2 wks    tower; WebSocket streaming of deltas;
+ WebSocket API
+                           2026               determinism tests
+
+                        18 May –              Swanky design system tokens; responsive layout;
+ UI shell + timing
+                         29 May      2 wks    timing tower; driver inspector skeleton;
+ tower + driver cards
+                           2026               accessibility pass (contrast/keyboard) 19
+
+                        01 Jun –              High-frequency rendering path (canvas/WebGL);
+ Telemetry canvas +
+                         12 Jun      2 wks    stints model; pit timeline; performance budget
+ stints/pit timeline
+                           2026               profiling guided by RAIL/MDN 36
+
+ Race control feed +    15 Jun –
+                                              Race control UI; highlight cards; FIA PDF viewer;
+ highlights + docs       26 Jun      2 wks
+                                              end-to-end replay demo narrative
+ viewer                    2026
+
+ AI/analytics V1 +      29 Jun –              Summarisation/highlight scoring in replay; CI/
+ packaging + release      10 Jul     2 wks    CD; optional Tauri packaging; monitoring hooks;
+ demo                      2026               final demo build 37
+
+
+Gantt (illustrative)
+
+
+  gantt
+    title F1 Insights System — MVP Plan (Start 23 Mar 2026)
+    dateFormat YYYY-MM-DD
+    axisFormat %d %b
+
+    section Gating
+    Licensing & scope gate                :a1, 2026-03-23, 14d
+
+    section Data foundation
+    Canonical schema v1                   :b1, 2026-04-06, 10d
+    OpenF1 importer v1                    :b2, 2026-04-06, 10d
+    Jolpica importer + rate limits        :b3, 2026-04-20, 10d
+    FIA PDFs ingestion + index            :b4, 2026-04-20, 10d
+
+    section Replay hub
+    Replay clock + WebSocket API          :c1, 2026-05-04, 10d
+    Determinism tests                     :c2, 2026-05-04, 10d
+
+
+
+
+                                              6
+     section UI
+     UI shell + timing tower                      :d1, 2026-05-18, 10d
+     Telemetry canvas + stints/pits               :d2, 2026-06-01, 10d
+     Race control + highlights + docs             :d3, 2026-06-15, 10d
+
+
+     section Analytics and release
+     AI/analytics v1                              :e1, 2026-06-29, 10d
+     Packaging + CI/CD + demo release             :e2, 2026-06-29, 10d
+
+
+Deliverables (by workstream)
+
+Data and platform: - Canonical schema v1 spec document + versioning rules. - Importers (OpenF1/
+Jolpica/FIA/FastF1 export) with retry/backoff and caching (FastF1 cache guidance should be applied even
+if FastF1 is used only as an ETL helper). 38
+- Reproducible demo datasets (manifest + checksums).
+
+
+Replay and backend: - Replay hub service: state projection + WebSocket API. - Replay determinism tests
+and dataset regression harness.
+
+
+Frontend: - Premium design system (tokens, components, icons). - Components: timing tower, driver
+inspector, telemetry canvas, stints/pits views, race control feed, highlights, docs pane. - Accessibility and
+responsive layouts.
+
+
+AI/analytics: - Derived metrics library (pace, deltas, tyre age, pit window heuristics). - AI summariser/
+highlight scorer on replay timelines. - Evaluation harness (offline).
+
+
+Resource estimates and staffing plan
+
+Developer-week estimates by role (balanced MVP team)
+
+                               Dev-
+  Role                                   Primary responsibilities
+                              weeks
+
+                                         Scope control, demo narrative, stakeholder comms,
+  Product/PM                     4–6
+                                         acceptance criteria
+
+                                         Architecture, non-functional requirements, risk closure,
+  Tech lead / architect        10–12
+                                         integration reviews
+
+  Data engineer                 8–10     Importers, schema mapping, dataset generation, data QA
+
+  Backend engineer              8–10     Replay hub, WebSocket API, storage/indexing, observability
+
+                                         UI framework, premium components, performance tuning,
+  Frontend engineer            10–14
+                                         accessibility
+
+  UX designer                    4–6     Design system, layout, interactions, usability testing
+
+  ML/analytics
+                                 6–8     Metrics, summarisation/highlights, evaluation harness
+  engineer
+
+
+
+
+                                                     7
+                               Dev-
+ Role                                     Primary responsibilities
+                              weeks
+
+                                          Determinism tests, load tests, accessibility validation, release
+ QA / test                      4–6
+                                          testing
+
+ DevOps/SRE (part-
+                                2–4       CI/CD, packaging automation, monitoring stack
+ time)
+
+Total (indicative): 56–76 person-weeks.
+
+
+Lean vs balanced vs accelerated
+
+     • Lean (1–2 engineers): feasible, but timeline expands and polish suffers; AI is likely deferred.
+     • Balanced (as above): hits July 2026 MVP target with real UI polish and determinism.
+     • Accelerated (add 1 FE + 1 BE): reduces critical path and improves QA/observability, largest benefit
+        in UI + replay hub.
+
+
+Risk register, legal gating, QA, performance, and security
+
+Risk register (with mitigations)
+
+ Risk                          Likelihood         Impact     Mitigation                          Owner
+
+                                                             Treat as gated milestone;
+                                                             default to non-commercial
+ Licensing constraints                                       demo; maintain provider
+ block desired use                                  Very     abstraction for licensed feed;      Legal +
+                                      High
+ (commercialisation, AI                             high     include explicit in-app             PM
+ training, redistribution)                                   disclaimers and avoid
+                                                             prohibited scraping/text-data
+                                                             mining. 39
+
+                                                             Replay-first; adapter contracts;
+ Upstream live data                                          health checks; “graceful
+ changes / partial data               High          High     degradation” modes; optional        Tech lead
+ availability                                                licensed provider integration.
+                                                              40
+
+
+                                                             Caching, request coalescing,
+ Rate limits cause import                                    backoff on HTTP 429; Jolpica
+                                 Medium         Medium                                           Data eng
+ failures                                                    limits are explicit and must be
+                                                             respected. 41
+
+ Data quality gaps                                           Canonical “nullable” design +
+ (missing fields,                                            provenance; test datasets;
+                                 Medium             High                                         Data eng
+ timestamp                                                   validate against FIA PDFs
+ inconsistencies)                                            where applicable. 9
+
+
+
+
+                                                      8
+  Risk                            Likelihood     Impact     Mitigation                           Owner
+
+                                                            Canvas/WebGL pipeline;
+                                                            decimation; keep hot path
+  Telemetry rendering jank
+                                    Medium          High    <10ms per frame per RAIL             Frontend
+  (UI not “premium”)
+                                                            guidance; profile with
+                                                            performance tooling. 18
+
+                                                            For Electron: follow security
+                                                            checklist (CSP, context
+  Desktop wrapper security
+                                    Medium          High    isolation, sandbox). For Tauri:      Tech lead
+  exposure
+                                                            strict CSP and capabilities/
+                                                            permissions allowlist. 42
+
+                                                            Determinism harness, stable
+  Replay non-determinism                                    sorting, explicit time bases,        Backend
+                                    Medium          High
+  breaks testing and trust                                  state builder purity (no wall-       + QA
+                                                            clock in projection).
+
+
+Legal/licensing gating and procurement steps
+
+This is a formal stage, not an informal review, because Formula 1 guidelines explicitly cover both timing
+data scraping/commercial reuse and AI/text-data mining restrictions. 3
+
+
+Gating checklist: - Confirm MVP is non-commercial demo and datasets are not redistributed in ways
+incompatible with CC BY‑NC‑SA terms (OpenF1 and Jolpica). 17
+- Ensure the app does not claim affiliation; display trademark and source disclaimers (both OpenF1 and
+FastF1 present similar disclaimers in their materials). 43
+- If commercial: engage licensing counsel, then either: - Seek express licence from Formula 1 companies
+for data/AI usage, or - Procure a licensed provider feed and integrate under contract (e.g., Sportradar F1
+live feed docs describe a gRPC event stream and position it as low-latency). 44
+
+
+Procurement workstream (optional, parallel): - Requirements definition (latency, fields, SLAs,
+redistribution rights). - Vendor evaluation and data-field gap analysis vs canonical schema. - Contract +
+privacy/security review. - Integration sprint(s) once credentials and sandbox endpoints available.
+
+
+QA and testing strategy
+
+Replay determinism: - For each dataset, generate: - event_log_hash (hash of canonical JSONL) -
+state_timeline_hash (hash of projected state at fixed ticks) - CI: run determinism tests on every PR
+(small dataset) and nightly (full dataset).
+
+
+Load and performance: - Rendering: ensure stable animation time budgets; web performance guidance
+implies 60fps class interactions need strict per-frame budgets (16.7ms total, ~10ms JS recommended).
+ 18
+
+- Backend: WebSocket fan-out tested at target concurrency (define a demo concurrency number; e.g.,
+50 clients) with CPU/memory headroom.
+
+
+Accessibility: - Contrast thresholds (4.5:1 for normal text; 3:1 for large text) and ensure sector state isn’t
+colour-only. 19
+
+
+
+
+                                                      9
+Performance targets and budgets
+
+UI targets (MVP): - Timing tower updates: 2–4 Hz “state tick” (fast enough for demo, reduces DOM
+churn). - Telemetry plots: render loop driven by requestAnimationFrame() , with decimation and
+worker offload; rAF schedules work according to browser frame timing.     45
+
+- Per-frame budget: aim for ~10ms JS on hot paths (RAIL). 46
+
+
+Backend targets (MVP): - Replay hub: <50ms state tick generation at 4Hz for a full grid dataset on a
+typical dev laptop. - WebSocket publish: <100ms end-to-end within local network for demo.
+
+
+Security checklist (web + optional desktop)
+
+Web: - CSP, dependency pinning, SRI/lockfiles, threat model for WebSocket events (validate schema;
+treat server as authority). - Sanitize any HTML/text rendering from PDFs or feeds; avoid untrusted HTML
+insertion.
+
+
+Electron (if chosen): - Enforce CSP; enable context isolation; enable sandboxing; never expose full Node
+APIs to renderer. 47
+
+
+Tauri (if chosen): - CSP configured; minimise capabilities/permissions; explicitly allowlist only required
+commands and windows. 48
+
+
+Monitoring/observability: - Import success rates, 429/backoff counts (Jolpica explicitly states 429
+behaviour). 30
+- Data completeness metrics per “kind” (telemetry %, lap count, etc.). - UI telemetry: frame time
+histograms, dropped frames, memory.
+
+
+Data-source comparison for MVP and beyond
+
+                                                                   Access         Licence /                         Reliability
+ Source                  Live?    Latency        Data types                                                  Cost
+                                                                   method         ToU                               notes
+
+                                                                                  CC BY‑NC‑SA
+                                                                   REST
+                                                 Telemetry                        4.0;                     Free
+                                                                   JSON/CSV;                                        Strong doc
+                    Yes (paid),                  (3.7Hz), laps,                   intended for      (historical)
+                                  ~3s typical                      streaming                                        2023+ only
+ OpenF1              historical                  positions,                       education/        + sponsor/
+                                  (live)                           via MQTT/                                        communit
+                          free                   race control,                    research/            paid for
+                                                                   WebSocket                                        operated
+                                                 weather, etc.                    non-                      live
+                                                                   w/ OAuth2
+                                                                                  commercial
+
+                       Mostly                    Timing/                          MIT (code);                       Cache and
+                                                                   Python
+                         post-                   telemetry as                     relies on                         offline mo
+                                  Post-                            library;
+                      session;                   dataframes;                      upstream                          document
+ FastF1                           session                          cache +                                   Free
+                          can                    live timing                      feeds; non-                       live record
+                                  dependent                        offline
+                       record                    recorder                         affiliated                        not real-tim
+                                                                   mode
+                           live                  stores raw file                  disclaimers                       usable 50
+
+
+
+
+                                                   10
+                                                                Access         Licence /                      Reliability
+ Source                Live?    Latency      Data types                                               Cost
+                                                                method         ToU                            notes
+
+                                                                               Non-
+                                                                                                              Explicit rat
+                                                                               commercial;
+                                                                                                              limits 4 rps
+                                             Calendar/                         CC
+ Jolpica                                                                                                      burst, 500
+                         No                  results/                          BY‑NC‑SA;
+ (Ergast-                       N/A                             REST                                  Free    sustained;
+                 (historical)                standings                         rate-limited;
+ compatible)                                                                                                  uptime no
+                                             metadata                          volunteer-
+                                                                                                              guarantee
+                                                                               run
+                                                                                                               51
+                                                                               disclaimer
+
+                  Not “live
+                                             Official                          Governed by                    High
+                      API”;
+                                             documents:                        site terms;                    authority;
+                 published      Minutes–                        Web/PDF
+ FIA PDFs                                    classifications,                  official/              Free    unstructur
+                   during/      hours                           downloads
+                                             decisions,                        authoritative                  parsing
+                      after
+                                             notes                             output                         required
+                  sessions
+
+                                                                                                              SLA-backe
+ Licensed                                                       gRPC
+                                             Leaderboard/                                                     requires
+ provider                       Low-                            event          Contractual            Paid
+                         Yes                 timing/pits                                                      procureme
+ (example:                      latency                         stream;        licence         (enterprise)
+                                             etc.                                                             integration
+ Sportradar)                                                    API docs
+                                                                                                               44
+
+
+                                                                               Guidelines
+                                                                               explicitly
+                                                                               restrict
+                                                                               substantial                    High legal
+                                                                Web
+                                                                               reuse and                      risk for
+ Formula1.com                                                   endpoints                      Not offered
+                                Near real-   Timing/                           commercial                     product; u
+ timing data             Yes                                    (not an                          as public
+                                time         results data                      scraping; AI/                  only within
+ (direct)                                                       official dev                           API
+                                                                               text-data                      permitted
+                                                                API)
+                                                                               mining                         contexts
+                                                                               restricted
+                                                                               without
+                                                                               licence
+
+
+Implementation task outlines and API patterns
+
+Sample API call patterns (for implementation tasks)
+
+OpenF1 (demo import)
+
+
+
+  # Telemetry (car_data)
+  curl "https://api.openf1.org/v1/car_data?
+  session_key=9159&driver_number=55&speed>=0"
+
+  # Weather
+  curl "https://api.openf1.org/v1/weather?session_key=9159"
+
+
+
+
+                                               11
+  # Laps (CSV example pattern shown in OpenF1 pages)
+  curl "https://api.openf1.org/v1/laps?
+  session_key=9839&driver_number=44&csv=true"
+
+
+OpenF1 documents these endpoint patterns and the 3.7 Hz car telemetry sampling rate and JSON/CSV
+output. 52
+
+
+OpenF1 auth (optional live streaming)
+
+
+
+  curl -X POST "https://api.openf1.org/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "username=YOUR_USERNAME&password=YOUR_PASSWORD"
+
+
+The OpenF1 auth guide states OAuth2 access tokens are required for real-time data and enabling
+MQTT/WebSocket streaming. 53
+
+
+Jolpica (metadata import)
+
+
+
+  # Calendar / schedule (Ergast-compatible)
+  curl "http://api.jolpi.ca/ergast/f1/2024.json"
+
+  # Example offset usage for efficient querying (as recommended)
+  curl "http://api.jolpi.ca/ergast/f1/2024/12/laps.json?limit=100&offset=0"
+
+
+Jolpica’s rate limits and offset guidance are documented.   30
+
+
+
+
+FastF1 live timing recording (optional)
+
+
+
+  python -m fastf1.livetiming save out.txt
+
+
+FastF1’s live timing client saves raw messages and states it is not usable during the session (post-
+processing only). 54
+
+
+Import script outlines (no full code)
+
+Node importer outline (OpenF1) - Inputs: session_key , optional driver_numbers[] , date range. -
+Steps: - For each endpoint ( car_data , laps , weather , race_control , etc.), fetch paginated/
+filtered results. - Cache responses by URL+params hash. - On 429/5xx: exponential backoff with jitter. -
+Map each row into canonical event (source, kind, event_time, payload). - Write JSONL event log; build
+secondary indexes (time → offset) for fast seek. - Acceptance tests: - Event log sorts deterministically by
+(event_time, source_priority, stable tie-break). - Round-trip decode and schema validation.
+
+
+Python exporter outline (FastF1 + cache) - Use FastF1 cache configuration and offline mode for
+deterministic reuse; cache hits don’t count to limits and caching is enabled by default. 55
+- Steps: - Cache.enable_cache(path) early. - Load session, export standard frames (laps, telemetry
+curves, results). - Emit canonical event forms or store as “parquet sidecar” referenced from manifest. -
+Risks: upstream availability constraints; avoid live reliance in MVP.
+
+
+
+                                                    12
+Jolpica importer outline - Enforce published limits (4 req/s burst; 500/hr sustained unauth). 30
+- Prefer aggregated endpoints and offsets; avoid per-lap loops. - Map schedule/results into canonical
+metadata tables (drivers, constructors, events).
+
+
+FIA PDF importer outline - Scrape season/event doc list pages and download PDFs; store raw PDF plus
+extracted text. - Render in UI via PDF viewer; index extracted text for search.
+
+
+Charting library tasks (licensing-aware)
+
+         • Plotly.js (MIT) for interactive dashboards quickly. 56
+         • D3 (ISC) for bespoke timing tower micro-visuals and custom scales. 57
+         • Apache ECharts (Apache-2.0) for performant canvas visualisations; its licence is explicitly
+           Apache-2.0. 58
+         • Highcharts only if licence terms are compatible with your use case; Highcharts explicitly clarifies
+           that internal business/prototyping can require a commercial licence. 59
+
+High-frequency telemetry rendering task: - Implement a canvas/WebGL renderer driven by
+ requestAnimationFrame() and adhere to frame budget guidance (RAIL). 60
+
+
+Immediate next steps checklist
+         • Lock the MVP licensing posture: confirm “non-commercial demo” and add a written gating
+           statement referencing Formula 1’s published restrictions on timing data reuse and AI/text-data
+           mining. 16
+         • Choose three concrete demo sessions (OpenF1 session_key s) and one FIA document set for
+           validation. 61
+         • Decide packaging: web-only MVP or SPA + Tauri bundle (offline dataset shipping). 62
+         • Write and freeze canonical schema v1 (JSONL + manifest) and create the determinism test
+           harness from day one.
+         • Build the replay hub skeleton + WebSocket streaming before any serious UI polish (so every UI
+           component can be developed against deterministic playback).
+         • Establish performance and accessibility budgets (RAIL + WCAG contrast thresholds) and wire
+           them into CI quality gates. 63
+
+
+
+ 1   40   https://github.com/JustAman62/undercut-f1
+https://github.com/JustAman62/undercut-f1
+
+ 2   6     28   54   https://github.com/theOehrly/Fast-F1/blob/master/fastf1/livetiming/client.py
+https://github.com/theOehrly/Fast-F1/blob/master/fastf1/livetiming/client.py
+
+ 3   12    15   16   21   39   https://www.formula1.com/en/information/guidelines.4EOKE9RRqevL4niTK9kWyt
+https://www.formula1.com/en/information/guidelines.4EOKE9RRqevL4niTK9kWyt
+
+ 4 https://www.formula1.com/en/information/f1-tv-subscription-terms-
+us-2024.384sQqjslhQ2Rhm1LdKgfD
+https://www.formula1.com/en/information/f1-tv-subscription-terms-us-2024.384sQqjslhQ2Rhm1LdKgfD
+
+ 5   13    17   20   26   61   https://openf1.org/
+https://openf1.org/
+
+ 7   51   https://github.com/jolpica/jolpica-f1/blob/main/TERMS.md
+https://github.com/jolpica/jolpica-f1/blob/main/TERMS.md
+
+
+
+
+                                                            13
+ 8   18   36   46   63   https://web.dev/articles/rail
+https://web.dev/articles/rail
+
+ 9 https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/
+season-2026-2072
+https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2026-2072
+
+10   22   https://github.com/tauri-apps/tauri?ref=ssp.sh
+https://github.com/tauri-apps/tauri?ref=ssp.sh
+
+11   24   https://electronjs.org/docs/latest/why-electron
+https://electronjs.org/docs/latest/why-electron
+
+14   34   43   49   52   https://openf1.org/docs/
+https://openf1.org/docs/
+
+19   https://www.w3.org/TR/UNDERSTANDING-WCAG20/visual-audio-contrast-contrast.html
+https://www.w3.org/TR/UNDERSTANDING-WCAG20/visual-audio-contrast-contrast.html
+
+23   62   https://tauri.app/v1/references/architecture/process-model
+https://tauri.app/v1/references/architecture/process-model
+
+25   53   https://openf1.org/auth.html
+https://openf1.org/auth.html
+
+27   33   https://github.com/theOehrly/Fast-F1
+https://github.com/theOehrly/Fast-F1
+
+29   https://github.com/jolpica/jolpica-f1
+https://github.com/jolpica/jolpica-f1
+
+30   35   41   https://github.com/jolpica/jolpica-f1/blob/main/docs/rate_limits.md
+https://github.com/jolpica/jolpica-f1/blob/main/docs/rate_limits.md
+
+31   37   48   https://v2.tauri.app/security/csp/
+https://v2.tauri.app/security/csp/
+
+32   https://betradar.com/formula-1/
+https://betradar.com/formula-1/
+
+38   50   55   https://docs.fastf1.dev/api_reference/cache_and_rate_limits.html
+https://docs.fastf1.dev/api_reference/cache_and_rate_limits.html
+
+42   47   https://electronjs.org/docs/latest/tutorial/security
+https://electronjs.org/docs/latest/tutorial/security
+
+44   https://docs.sportradar.com/live-data/introduction/information-per-sport/f1
+https://docs.sportradar.com/live-data/introduction/information-per-sport/f1
+
+45   60   https://developer.mozilla.org/en-US/docs/Games/Anatomy
+https://developer.mozilla.org/en-US/docs/Games/Anatomy
+
+56   https://github.com/plotly/plotly.js/
+https://github.com/plotly/plotly.js/
+
+57   https://github.com/d3/d3
+https://github.com/d3/d3
+
+58   https://github.com/apache/echarts/blob/master/LICENSE
+https://github.com/apache/echarts/blob/master/LICENSE
+
+
+
+
+                                                             14
+59   https://www.highcharts.com/blog/news/our-new-eula-makes-free-usage-clearer/
+https://www.highcharts.com/blog/news/our-new-eula-makes-free-usage-clearer/
+
+
+
+
+                                                        15
+

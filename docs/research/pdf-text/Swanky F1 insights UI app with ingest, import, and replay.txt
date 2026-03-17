@@ -1,0 +1,1267 @@
+Swanky F1 insights UI app with ingest, import,
+and replay
+Executive summary
+A “swanky” F1 insights UI is won (or lost) on three axes: data replayability, high-frequency rendering
+performance, and licence-safe demo content. For a working demo in 2026, the most reliable
+approach is a web-first UI (single-page app) backed by a small local “data hub” service that (a) imports
+historical sessions from community sources, (b) normalises into a canonical event schema, and (c)
+replays those events over a WebSocket at selectable speed. This avoids building UI logic around “live”
+sources that can change, disappear, or become gated mid-season. (For example, community tooling
+notes that parts of the live feed stopped being freely published for full functionality from late 2025,
+while post-session importing still works.) 1
+
+
+On platform choice, a modern SPA wrapped for desktop only when needed gives the best time-to-demo
+and design flexibility. When you do want a desktop package (offline, filesystem access, multi-window,
+native menus), Tauri is typically the better “demo-grade” wrapper than Electron if you can accept OS
+WebView variance: Tauri renders via the system WebView stack (WKWebView/WebView2/WebKitGTK),
+rather than bundling a full Chromium runtime. 2 Electron, by contrast, explicitly bundles Chromium
+and Node.js into the app binary to deliver predictable rendering across platforms, which increases
+packaging heft but reduces runtime variance. 3
+
+
+For demo ingestion, the most licence-clear, developer-friendly sources are: - OpenF1 for 2023+ timing/
+telemetry/weather/race control in JSON/CSV with documented sampling rates and example queries,
+plus optional paid live streaming via MQTT/WebSocket. 4
+- FastF1 for post-session analysis objects (Pandas DataFrames), strong caching/rate-limit handling, and
+a live timing recorder that saves raw streams for later processing (not real-time parsing). 5
+- Jolpica (Ergast-compatible) for historical schedule/results with explicit rate limits and non-
+commercial use terms. 6
+- FIA PDFs for authoritative classifications/decisions (excellent for validation and “official doc viewer” UI,
+but requires PDF parsing). 7
+
+
+Finally, the demo must include prominent legal disclaimers: Formula1.com guidelines state that
+“Statistics, Results and Timing Data” is protected and substantial reproduction/commercial use via
+scraping is not permitted; separately, F1TV terms include explicit prohibitions on text/data mining and
+scraping. 8
+
+
+Recommended UI platforms and frameworks
+
+Platform recommendation
+
+For an open-ended target OS/user base, a pragmatic stack is:
+
+
+      • Primary: Web SPA (TypeScript)
+        Best for rapid iteration on a premium UI, responsive layouts, and cross-platform distribution via
+
+
+
+
+                                                      1
+      a URL. Also easiest for embedding a replay engine and doing high-frequency canvas/WebGL
+      telemetry.
+
+
+     • Optional: Desktop wrapper for “swanky demo” distribution
+       Use desktop packaging when you need offline replay bundles (ship a dataset), native filesystem
+       import/export, or a polished “app” feel (menus, auto-updates, multi-window).
+
+
+A good default is SPA first, then wrap with Tauri: - Tauri uses the system WebView interface (platform
+WebView stack), keeping the application lighter and enabling a Rust-based local backend for replay,
+storage, and optional ML inference later. 2
+- Electron bundles Chromium/Node for “same runtime everywhere”, which can reduce “it works on my
+machine” design surprises, at the cost of heavier packaging. 3
+
+
+Framework selection guidance (UI layer)
+
+All listed frameworks can deliver premium results; the choice should align with your team ergonomics
+and charting strategy.
+
+
+Best fit for this domain (high-density + charts + tooling): - React + Vite (or Next.js if you want
+routing/server features)
+Strong ecosystem for charting, table virtualisation, and state tooling; easy to hire for. - SvelteKit
+Excellent performance and smaller bundles; still very capable for premium dashboards. - Vue (Vite)
+Smooth DX and component model; chart ecosystem is strong.
+
+
+Good but higher commitment: - Flutter desktop compiles to native desktop apps for Windows/
+macOS/Linux and supports plugins; great for a “single codebase across desktop & mobile” strategy, but
+its rendering model and charting choices differ significantly from web-first stacks. 9
+- Qt can produce extremely polished native-feeling UIs, but licensing and hiring paths often shape the
+decision more than technology.
+
+
+Web vs desktop trade-offs
+
+ Dimension                    Web SPA                   Desktop wrapper (Tauri/Electron)
+
+                              Instant via URL; no       Installer + updates; higher friction but
+ Distribution
+                              installs                  “premium app” feel
+
+                              Harder (service           Strong (ship data bundles; local DB/
+ Offline replay
+                              workers + quotas)         filesystem)
+
+ Native APIs (files, global   Limited /                 Strong (filesystem, tray, menus, global
+ hotkeys, multi-window)       permissioned              shortcuts)
+
+                                                        Electron: consistent Chromium; Tauri: OS
+ Rendering consistency        Browser variability
+                                                        WebView variance 10
+
+                                                        Desktop adds “XSS → local compromise” risk
+ Security blast radius        Typical web risks         if misconfigured; requires strict hardening
+                                                         11
+
+
+                              Excellent with            Similar; sometimes even better with local
+ Telemetry performance
+                              canvas/WebGL              resources
+
+
+
+
+                                                    2
+  Dimension                     Web SPA                  Desktop wrapper (Tauri/Electron)
+
+                                                         Electron often larger due to bundling
+  Packaging size                Small                    Chromium; Tauri typically smaller due to
+                                                         system WebView 12
+
+
+Design system and premium motorsport UI patterns
+
+Product aesthetic and visual grammar
+
+A premium motorsport UI tends to feel “swanky” when it combines: - Broadcast-grade clarity: dense
+but legible information, using alignment and typographic hierarchy rather than heavy borders. -
+Telemetry-lab surfaces: dark theme, subtle depth, glassy panels, crisp monospace numerics for
+timing, and restrained accent colour usage. - Kinetic micro-interactions: time deltas ticking, sector
+colour flashes, and pit events animating in—but always bounded by strict performance budgets.
+
+
+A strong default design system for this category: - Colour system: Neutral dark base + a small set of
+semantic colours (sector purple/green/yellow analogues, warning red, safety car amber, “track status”
+yellow/red/green). Avoid relying on colour alone; always pair with icons/text tokens for accessibility. -
+Typography:
+- UI: a modern grotesk (e.g., Inter-style)
+- Numbers: tabular figures + optionally a monospace for time deltas (“1:23.456”, “+0.742”) - Spacing: 4px
+grid; dense tables use 28–32px row height on desktop, 36–40px on touch. - Elevation: very subtle—
+avoid heavy shadows; use 1px borders with low opacity and gentle background gradients.
+
+
+Accessibility and localisation (en-GB)
+
+For accessibility, treat WCAG as a baseline constraint, not an afterthought. WCAG 2.2 specifies contrast
+thresholds: at least 4.5:1 for normal text and 3:1 for large text under Success Criterion 1.4.3. 13
+
+
+Concrete implementation guidance for this UI type: - Keyboard-first navigation:
+- Timing tower rows must be focusable.
+- Provide shortcuts (e.g., / search drivers, f follow selected driver, [ ] change replay speed). -
+Screen reader semantics: use a real <table> for timing tower in web; for virtualised lists, emulate
+table semantics with ARIA carefully. - Non-colour cues: sector improvements should use an icon or
+label (“PB”, “SB”) in addition to colour. - Localisation:
+- Use Intl.DateTimeFormat('en-GB') for timestamp display
+- Use SI units consistently (km/h, °C). OpenF1 weather fields are explicitly in °C (air/track temperature),
+so keep those as-is. 14
+
+
+Responsive layouts
+
+A proven responsive pattern for motorsport dashboards: - Desktop: 3-column grid
+- Left: Timing tower
+- Centre: Track map + highlight cards
+- Right: Driver inspector (telemetry, stint, pit timeline, radio snippets) - Tablet: 2 columns + bottom
+drawer for driver inspector - Mobile: single column with tabbed sections (Tower / Track / Driver / Events)
+
+
+
+
+                                                    3
+Performance budgets for a “smooth” feel
+
+A swanky UI is perceived as premium when animations and live updates are stable: -
+ requestAnimationFrame() typically tracks display refresh rate (commonly 60Hz), and browsers
+pause it in background tabs for efficiency. 15
+- The RAIL model guidance: for smooth 60fps animation, theoretical max budget is ~16ms per frame,
+but practical guidance is about 10ms per frame to leave time for browser rendering. 16
+- MDN similarly explains that at 60fps the browser has ~16.7ms to run scripts, layout, and paint—so
+heavy main-thread work causes jank. 17
+
+
+Practical budgets for this app: - Timing tower updates: 2–4Hz is usually enough for legibility; animate
+deltas but batch DOM updates. - Telemetry rendering: decimate to a rendering rate your UI can
+guarantee (often 30–60fps render; 5–20Hz data refresh shown), using ring buffers and canvas/WebGL. -
+Avoid layout thrash: animate only transform / opacity , not layout properties, in hot paths. 17
+
+
+Data ingestion for demo and replay
+
+Recommended open/community sources for import
+
+This section is intentionally “demo-safe” (historical and/or explicit community APIs).
+
+
+OpenF1 (2023+) — primary demo feed
+
+OpenF1 documents: - Telemetry sampling about 3.7Hz for car telemetry (“car_data”).       18
+
+- Weather updates “every minute”. 14
+- Formats: JSON default, CSV via csv=true . 19
+- Real-time access: authenticated users can stream via MQTT/WebSocket.       20
+
+
+
+
+OpenF1 example endpoint patterns (from the OpenF1 docs / endpoint list):          21
+
+
+
+
+  # Car telemetry (car_data)
+  curl "https://api.openf1.org/v1/car_data?
+  driver_number=55&session_key=9159&speed>=315"
+
+  # Weather
+  curl "https://api.openf1.org/v1/weather?
+  meeting_key=1208&wind_direction>=130&track_temperature>=52"
+
+
+FastF1 — post-session structured imports and offline cache
+
+FastF1 routes all HTTP through its caching and rate limiting system; caching is enabled by default, and
+cache hits don’t count towards rate limits. 22 It supports a live timing client that saves raw SignalR
+(now SignalR Core) data to a file for later processing, but explicitly does not parse in real time. 23
+
+
+FastF1 cache locations and configuration mechanisms are documented (e.g., FASTF1_CACHE env var,
+OS defaults, and Cache.enable_cache ).        22
+
+
+
+
+                                                     4
+Jolpica — historical schedule/results import
+
+Jolpica states its Ergast-compatible base URL and provides explicit rate limits.   24
+
+- Base: http://api.jolpi.ca/ergast/f1/ 25
+- Unauthenticated limits: 4 req/s burst, 500 req/hour sustained.     26
+
+- Terms: non-commercial use and CC BY‑NC‑SA 4.0 are stated in its Terms of Use.         27
+
+
+
+
+FIA PDFs — authoritative official artefacts
+
+The FIA publishes session documents (classifications, decisions, scrutineering, points) as PDFs. The
+series “Decision documents” page for the 2026 season shows documents and publish times (CET). 7
+These are ideal for: - “Official documents” viewer component - Post-session validation (what the official
+classification says vs community feed) - Penalty/decision timeline (via PDF text extraction)
+
+
+Optional demo-import: post-session static timing files
+
+For replay tooling, some community projects use post-session static JSON/JSONStream files under
+ livetiming.formula1.com/static/... and an Index.json that describes feed names and
+their KeyFramePath and StreamPath .           28
+
+This is operationally useful but legally sensitive: Formula1.com guidance restricts substantial
+reproduction of timing/results data and prohibits commercial use via scraping; treat any such import as
+“research-only” unless you obtain appropriate rights. 29
+
+
+Canonical schema mapping and replay engine design
+
+Canonical event schema
+
+A replay-centric canonical model should be append-only and time-addressed. A practical baseline is
+JSON Lines ( .jsonl ) events plus a metadata manifest.
+
+
+Event record (JSONL):
+
+
+
+  {
+      "schema_version": "1.0",
+      "source": "openf1|fastf1|jolpica|fia_pdf",
+      "ingest_time_utc": "2026-03-16T12:34:56.789Z",
+      "event_time_utc": "2026-03-16T12:34:54.123Z",
+      "meeting_key": 1219,
+      "session_key": 9159,
+      "driver": { "number": 55, "code": "SAI" },
+      "kind": "car_data|weather|lap|position|race_control|pit|result|document",
+      "payload": {}
+  }
+
+
+
+Session manifest ( session.json ):
+
+
+
+  {
+      "schema_version": "1.0",
+
+
+
+
+                                                     5
+         "dataset_name": "openf1_9159_demo",
+         "source_priority": ["fia_pdf", "openf1", "fastf1", "jolpica"],
+         "created_utc": "2026-03-16T12:00:00Z",
+         "meeting_key": 1219,
+         "session_key": 9159,
+         "drivers": [{ "number": 55, "code": "SAI" }],
+         "time_basis": "utc",
+         "files": ["events.jsonl", "raw/openf1/*.json", "docs/fia/*.pdf"]
+     }
+
+
+
+Mapping rules per source
+
+OpenF1 mapping highlights - Use OpenF1 date fields as event_time_utc . - Map:
+- car_data → kind=car_data , payload includes speed , throttle , brake , rpm , n_gear ,
+    drs , etc. (fields shown in OpenF1 examples).   18
+
+-     weather    →    kind=weather , payload includes         air_temperature ,   track_temperature ,
+    wind_speed , etc.   14
+
+
+
+
+FastF1 mapping highlights - Use FastF1                   SessionTime   carefully: FastF1 documents that
+    SessionTime is relative to the beginning of a session and that SessionTime “zero marks the
+beginning of all data streams.” 30
+- For canonical event_time_utc , prefer absolute timestamps when present; otherwise store relative
+time in payload and convert using session start if known.
+
+
+Jolpica mapping highlights - Jolpica is best used to populate “static metadata”: seasons, rounds, race
+names, circuit IDs, driver IDs, classifications.
+- Enforce rate limits and offsets as documented (Jolpica’s rate-limits guide explicitly advises more
+efficient queries with offsets). 26
+
+
+FIA PDF mapping highlights - Documents become                    kind=document    events with payload:
+    {doc_id, title, published_time, url_hash, extracted_text?}
+- Keep PDFs unmodified; store extracted text separately for search indexing.
+
+
+Replay engine design
+
+A replay engine should: - Read the event log in chronological order (or partition by kind ) - Emit
+“current state” snapshots at UI-friendly cadence (e.g., 5–10Hz tower ticks) - Emit high-frequency
+telemetry frames to a canvas/WebGL renderer at a controlled cadence (render loop decoupled from
+data ingest)
+
+
+A robust pattern is: - Backend: ReplayClock (wall-clock → replay-time mapping)
+- Backend: EventCursor (seek by time)
+- Frontend: subscribe to ws://.../replay receiving (replay_time, state_delta) messages.
+
+
+This keeps the UI reactive and allows “scrub timeline” functionality cheaply (jump cursor).
+
+
+
+     flowchart LR
+       subgraph Importers
+
+
+
+
+                                                         6
+      A[OpenF1 REST importer] --> D[Canonical event log]
+      B[FastF1 exporter] --> D
+      C[Jolpica metadata importer] --> D
+      E[FIA PDF fetch+parse] --> D
+    end
+
+
+    subgraph Local Data Hub
+      D --> S[State builder\n(tower, stints, pits)]
+      D --> T[Telemetry buffer\n(ring buffers)]
+      S --> WS[WebSocket API]
+      T --> WS
+    end
+
+    subgraph UI
+      WS --> UI1[Timing tower]
+      WS --> UI2[Driver inspector]
+      WS --> UI3[Telemetry canvas/WebGL]
+      WS --> UI4[Documents viewer]
+    end
+
+
+
+Implementation reference: imports, components, and high-
+frequency charts
+
+Import scripts with caching, backoff, and safety
+
+Node.js importer (OpenF1 + simple cache)
+
+This script demonstrates: - Local cache per URL - Exponential backoff on 429/5xx - Basic concurrency
+limiting
+
+
+
+  // import_openf1_demo.mjs
+  import fs from "node:fs/promises";
+  import path from "node:path";
+  import crypto from "node:crypto";
+
+  const CACHE_DIR = ".cache/openf1";
+  const OUT_DIR = "dataset_openf1_demo";
+  const MAX_RETRIES = 6;
+
+  async function ensureDir(p) {
+    await fs.mkdir(p, { recursive: true });
+  }
+
+  function cacheKey(url) {
+    return crypto.createHash("sha256").update(url).digest("hex");
+  }
+
+  async function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+
+
+
+
+                                                 7
+}
+
+async function fetchWithBackoff(url, { timeoutMs = 20000 } = {}) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const res = await fetch(url, {
+          headers: { "User-Agent": "F1DemoImporter/1.0 (en-GB)" },
+          signal: controller.signal
+        });
+
+      // Respect throttling and transient errors
+      if (res.status === 429 || (res.status >= 500 && res.status <= 599)) {
+         const retryAfter = res.headers.get("retry-after");
+         const base = retryAfter ? Number(retryAfter) * 1000 : 250 * 2 **
+attempt;
+         const jitter = Math.floor(Math.random() * 200);
+         await sleep(base + jitter);
+         continue;
+      }
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} for ${url}`);
+        }
+
+        return await res.json();
+      } finally {
+        clearTimeout(t);
+      }
+    }
+    throw new Error(`Failed after retries: ${url}`);
+}
+
+async function cachedJson(url) {
+  await ensureDir(CACHE_DIR);
+    const fp = path.join(CACHE_DIR, cacheKey(url) + ".json");
+
+    try {
+      const buf = await fs.readFile(fp, "utf8");
+      return JSON.parse(buf);
+    } catch {
+      const data = await fetchWithBackoff(url);
+      await fs.writeFile(fp, JSON.stringify(data), "utf8");
+      return data;
+    }
+}
+
+function toEvent({ source, kind, row }) {
+  // OpenF1 rows include "date" as ISO timestamp (UTC offset included).
+
+
+
+
+                                         8
+    const eventTime = row.date ?? row.time ?? row.datetime;
+    return {
+      schema_version: "1.0",
+      source,
+      ingest_time_utc: new Date().toISOString(),
+      event_time_utc: eventTime ?? null,
+      meeting_key: row.meeting_key ?? null,
+      session_key: row.session_key ?? null,
+      driver: row.driver_number ? { number: row.driver_number, code:
+row.driver_code ?? null } : null,
+     kind,
+     payload: row
+  };
+}
+
+async function main() {
+  await ensureDir(OUT_DIR);
+
+  // You should replace session_key / meeting_key with your chosen demo
+session.
+  const sessionKey = 9159; // example used in OpenF1 docs
+  const driverNumber = 55;
+
+  const carUrl = `https://api.openf1.org/v1/car_data?driver_number=$
+{driverNumber}&session_key=${sessionKey}&speed>=0`;
+  const weatherUrl = `https://api.openf1.org/v1/weather?session_key=$
+{sessionKey}`;
+
+  const [carData, weather] = await Promise.all([cachedJson(carUrl),
+cachedJson(weatherUrl)]);
+
+  const events = [];
+  for (const row of carData) events.push(toEvent({ source: "openf1", kind:
+"car_data", row }));
+  for (const row of weather) events.push(toEvent({ source: "openf1", kind:
+"weather", row }));
+
+
+  // Sort by timestamp when available
+  events.sort((a, b) => (a.event_time_utc ??
+"").localeCompare(b.event_time_utc ?? ""));
+
+    const out = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+    await fs.writeFile(path.join(OUT_DIR, "events.jsonl"), out, "utf8");
+
+    console.log(`Wrote ${events.length} events to ${OUT_DIR}/events.jsonl`);
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
+
+
+
+                                        9
+OpenF1’s docs supply the example car_data and weather URLs shown above (including query
+patterns). 21
+For live streaming, OpenF1 describes authenticated MQTT/WebSocket access; keep the demo importer
+strictly historical unless you’ve subscribed and your use is compliant. 20
+
+
+Python importer (Jolpica + rate limiting + caching)
+
+This script uses requests_cache + a rate limiter pattern (so cache hits don’t count toward rate limits;
+the principle is explicitly discussed in requests-cache documentation).   31
+
+Jolpica’s unauthenticated limits are published as 4 req/s burst and 500 req/hour sustained.   26
+
+
+
+
+  # import_jolpica_demo.py
+  import json
+  import time
+  from pathlib import Path
+  from urllib.parse import urljoin
+
+  import requests
+
+  BASE = "http://api.jolpi.ca/ergast/f1/"
+  OUT_DIR = Path("dataset_jolpica_demo")
+  OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+  # Simple token bucket (burst 4 rps) + hourly cap guardrail (500/h).
+  # For a demo importer, we'll be conservative.
+  MIN_INTERVAL_S = 0.35   # ~2.8 rps
+  MAX_HOURLY = 450
+
+  _state = {"last": 0.0, "hour_start": time.time(), "hour_count": 0}
+
+  def throttle():
+    now = time.time()
+    if now - _state["hour_start"] >= 3600:
+      _state["hour_start"] = now
+      _state["hour_count"] = 0
+    if _state["hour_count"] >= MAX_HOURLY:
+      sleep_s = 3600 - (now - _state["hour_start"])
+      time.sleep(max(0, sleep_s))
+      _state["hour_start"] = time.time()
+      _state["hour_count"] = 0
+
+    elapsed = now - _state["last"]
+    if elapsed < MIN_INTERVAL_S:
+      time.sleep(MIN_INTERVAL_S - elapsed)
+
+    _state["last"] = time.time()
+    _state["hour_count"] += 1
+
+  def get_json(rel_path: str, params=None, retries=6):
+    url = urljoin(BASE, rel_path)
+
+
+
+
+                                                   10
+    params = params or {}
+
+    for attempt in range(retries + 1):
+      throttle()
+      r = requests.get(url, params=params, headers={"User-Agent":
+  "F1DemoImporter/1.0 (en-GB)"}, timeout=20)
+      if r.status_code == 429 or 500 <= r.status_code <= 599:
+        backoff = (0.3 * (2 ** attempt)) + (0.05 * (attempt + 1))
+        time.sleep(backoff)
+         continue
+       r.raise_for_status()
+       return r.json()
+
+    raise RuntimeError(f"Failed after retries: {url}")
+
+  def main():
+    # Example: fetch the 2024 season race calendar (Ergast shape)
+    data = get_json("2024.json")
+    (OUT_DIR / "2024_calendar.json").write_text(json.dumps(data, indent=2),
+  encoding="utf-8")
+    print("Wrote dataset_jolpica_demo/2024_calendar.json")
+
+  if __name__ == "__main__":
+    main()
+
+
+Component-level UI designs (React examples)
+
+Below are “starter-grade” components that focus on layout, semantics, and performance. Treat them as
+patterns to refine with your design system and data contracts.
+
+
+CSS design tokens (premium dark)
+
+
+  :root {
+    --bg: #0b0e14;
+    --panel: rgba(255, 255, 255, 0.06);
+    --panel-2: rgba(255, 255, 255, 0.09);
+    --border: rgba(255, 255, 255, 0.10);
+    --text: rgba(255, 255, 255, 0.92);
+    --muted: rgba(255, 255, 255, 0.68);
+
+    --accent: #7aa2ff;
+    --good: #2ee59d;
+    --warn: #ffd166;
+    --bad: #ff4d6d;
+
+    --radius: 14px;
+    --radius-sm: 10px;
+    --shadow: 0 18px 50px rgba(0,0,0,0.55);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation
+  Mono", monospace;
+
+
+
+
+                                                11
+   --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial,
+ sans-serif;
+ }
+
+ body {
+   background: radial-gradient(1200px 600px at 20% 0%, rgba(122,162,255,
+ 0.14), transparent 60%),
+               radial-gradient(1000px 500px at 80% 0%, rgba(46,229,157,0.10),
+ transparent 60%),
+                  var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+ }
+
+ .panel {
+   background: linear-gradient(180deg, var(--panel), transparent 220%);
+   border: 1px solid var(--border);
+   border-radius: var(--radius);
+   box-shadow: var(--shadow);
+   backdrop-filter: blur(10px);
+ }
+
+
+Timing tower component
+
+
+ // TimingTower.tsx
+ import React from "react";
+
+ export type SectorState = "personalBest" | "sessionBest" | "slow" | "none";
+ export type DriverRow = {
+   pos: number;
+   code: string;
+   number: number;
+   tyre: "S" | "M" | "H" | "I" | "W";
+   tyreAge: number;
+   lastLap: string;     // "1:23.456"
+   bestLap: string;
+      gapToLeader: string; // "+5.123" or "—"
+      intervalAhead: string;
+      sectors: [SectorState, SectorState, SectorState];
+ };
+
+ function sectorClass(s: SectorState) {
+   if (s === "sessionBest") return "sec sec--pb";         // purple analogue
+   if (s === "personalBest") return "sec sec--gb";        // green analogue
+   if (s === "slow") return "sec sec--yb";                // yellow analogue
+   return "sec";
+ }
+
+ export function TimingTower({ rows, selected, onSelect } : {
+   rows: DriverRow[];
+
+
+
+
+                                         12
+  selected?: number; // driver number
+  onSelect?: (driverNumber: number) => void;
+}) {
+  return (
+     <section className="panel" aria-label="Timing tower">
+      <header style={{ padding: "14px 14px 10px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between",
+alignItems: "baseline" }}>
+          <h2 style={{ margin: 0, fontSize: 16, letterSpacing: 0.4 }}
+>Timing</h2>
+          <span style={{ fontFamily: "var(--mono)", color: "var(--muted)",
+fontSize: 12 }}>Replay</span>
+        </div>
+      </header>
+
+      <div role="table" aria-label="Timing table" style={{ padding: "0 10px
+10px" }}>
+        <div role="row" className="towerHeader">
+          <span>Pos</span><span>Drv</span><span>Tyre</span><span>Last</
+span><span>Best</span><span>Gap</span><span>Int</span><span>S1</
+span><span>S2</span><span>S3</span>
+        </div>
+
+        {rows.map((r) => {
+          const isSel = selected === r.number;
+          return (
+            <button
+              key={r.number}
+              className={`towerRow ${isSel ? "towerRow--sel" : ""}`}
+              role="row"
+              onClick={() => onSelect?.(r.number)}
+            >
+              <span style={{ fontFamily: "var(--mono)" }}>{r.pos}</span>
+              <span style={{ fontWeight: 650 }}>{r.code}</span>
+              <span className="tyre">{r.tyre} <em>{r.tyreAge}</em></span>
+              <span style={{ fontFamily: "var(--mono)" }}>{r.lastLap}</span>
+              <span style={{ fontFamily: "var(--mono)", color: "var(--
+muted)" }}>{r.bestLap}</span>
+               <span style={{ fontFamily: "var(--mono)" }}>{r.gapToLeader}</
+span>
+               <span style={{ fontFamily: "var(--mono)", color: "var(--
+muted)" }}>{r.intervalAhead}</span>
+               <span className={sectorClass(r.sectors[0])} aria-
+label={`Sector 1 ${r.sectors[0]}`} />
+               <span className={sectorClass(r.sectors[1])} aria-
+label={`Sector 2 ${r.sectors[1]}`} />
+               <span className={sectorClass(r.sectors[2])} aria-
+label={`Sector 3 ${r.sectors[2]}`} />
+             </button>
+          );
+        })}
+
+
+
+
+                                      13
+           </div>
+         </section>
+    );
+}
+
+
+
+.towerHeader, .towerRow {
+  display: grid;
+  grid-template-columns: 40px 52px 72px 90px 90px 70px 70px 18px 18px 18px;
+    gap: 8px;
+    align-items: center;
+}
+
+.towerHeader {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px 6px;
+}
+
+.towerRow {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 10px 6px;
+  cursor: pointer;
+}
+
+.towerRow:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.08);
+}
+
+.towerRow--sel {
+  background: rgba(122,162,255,0.10);
+  border-color: rgba(122,162,255,0.35);
+}
+
+.tyre em {
+  font-style: normal;
+  color: var(--muted);
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.sec {
+  height: 12px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.10);
+
+
+
+
+                                        14
+  }
+  .sec--pb { background: rgba(175, 90, 255, 0.95); }
+  .sec--gb { background: rgba(46,229,157,0.95); }
+  .sec--yb { background: rgba(255,209,102,0.95); }
+
+
+Race control feed and highlight cards
+
+OpenF1 exposes “race control” style messages and other structured events; a feed UI should therefore
+support severity tagging, filtering, and time grouping. 19
+
+
+
+  // RaceControlFeed.tsx
+  import React from "react";
+
+  export type RCMsg = {
+     t: string; // ISO time
+     category: "track" | "incident" | "investigation" | "penalty" | "weather" |
+  "session";
+     message: string;
+     severity: "info" | "warn" | "critical";
+  };
+
+  export function RaceControlFeed({ messages }: { messages: RCMsg[] }) {
+    return (
+      <section className="panel" aria-label="Race control feed" style={{
+  padding: 14 }}>
+        <h2 style={{ margin: 0, fontSize: 16 }}>Race control</h2>
+        <ol style={{ listStyle: "none", padding: 0, margin: "12px 0 0" }}>
+          {messages.map((m, idx) => (
+             <li key={idx} className={`rc rc--${m.severity}`}>
+               <div className="rcTop">
+                 <time className="rcTime">{new Date(m.t).toLocaleTimeString("en-
+  GB")}</time>
+                 <span className="rcTag">{m.category}</span>
+               </div>
+               <div className="rcMsg">{m.message}</div>
+             </li>
+               ))}
+             </ol>
+           </section>
+      );
+  }
+
+
+
+  .rc { padding: 10px; border-radius: var(--radius-sm); border: 1px solid
+  var(--border); background: rgba(255,255,255,0.03); margin-bottom: 10px; }
+  .rcTop { display: flex; justify-content: space-between; align-items:
+  baseline; }
+  .rcTime { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .rcTag { font-size: 12px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.8px; }
+
+
+
+
+                                                15
+  .rcMsg { margin-top: 6px; line-height: 1.25; }
+  .rc--warn { border-color: rgba(255,209,102,0.35); }
+  .rc--critical { border-color: rgba(255,77,109,0.45); background: rgba(255,77,
+  109,0.08); }
+
+
+Charting libraries and high-frequency telemetry rendering
+
+A premium telemetry experience often uses two charting modes: - Standard charts (stints, pit timeline,
+lap deltas): SVG/canvas chart libs - High-frequency telemetry (speed/throttle/brake traces): custom
+canvas/WebGL loop
+
+
+Recommended libraries by licence and fit: - D3: low-level bespoke visuals; ISC licence. 32
+- Plotly.js: high-level interactive with WebGL traces; MIT licence. 33
+- Apache ECharts: strong performance claims (progressive rendering/stream loading) and Apache-2.0
+licence. 34
+- Highcharts: excellent polish, but commercial licensing clarity is required (free personal/educational
+are scoped; internal business use can require a commercial licence). 35
+
+
+For high-frequency traces, implement a canvas renderer driven by requestAnimationFrame() ,
+which is tied to display refresh rate (commonly 60Hz).   15   Keep within the RAIL frame budget guidance
+(aim ~10ms of JS per frame for smooth output). 16
+
+
+Minimal canvas telemetry renderer pattern
+
+
+  // TelemetryCanvas.tsx
+  import React, { useEffect, useRef } from "react";
+
+  export type TelemetryPoint = { t: number; v:
+  number }; // t seconds in replay time
+
+
+  export function TelemetryCanvas({ series, tNow }: { series:
+  TelemetryPoint[]; tNow: number }) {
+    const ref = useRef<HTMLCanvasElement | null>(null);
+
+    useEffect(() => {
+      let raf = 0;
+      const canvas = ref.current!;
+      const ctx = canvas.getContext("2d")!;
+
+       function resize() {
+         const dpr = window.devicePixelRatio || 1;
+         const { width, height } = canvas.getBoundingClientRect();
+         canvas.width = Math.floor(width * dpr);
+         canvas.height = Math.floor(height * dpr);
+         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+       }
+       resize();
+       window.addEventListener("resize", resize);
+
+
+
+
+                                                  16
+    function draw() {
+      const w = canvas.getBoundingClientRect().width;
+      const h = canvas.getBoundingClientRect().height;
+
+        ctx.clearRect(0, 0, w, h);
+
+
+        // Window: last 12s
+        const t0 = tNow - 12;
+        const t1 = tNow;
+
+
+      // Find slice quickly (in production, keep an index cursor / binary
+search)
+      const slice = series.filter(p => p.t >= t0 && p.t <= t1);
+
+      // Compute min/max
+      let min = Infinity, max = -Infinity;
+      for (const p of slice) { if (p.v < min) min = p.v; if (p.v > max) max
+= p.v; }
+      if (!isFinite(min) || !isFinite(max) || min === max) { raf =
+requestAnimationFrame(draw); return; }
+
+        // Axes
+        ctx.globalAlpha = 0.6;
+        ctx.fillText("last 12s", 10, 14);
+        ctx.globalAlpha = 1;
+
+        // Line
+        ctx.beginPath();
+        for (let i = 0; i < slice.length; i++) {
+          const p = slice[i];
+          const x = 10 + ((p.t - t0) / (t1 - t0)) * (w - 20);
+          const y = 20 + (1 - (p.v - min) / (max - min)) * (h - 30);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+
+        raf = requestAnimationFrame(draw);
+    }
+
+    raf = requestAnimationFrame(draw);
+
+    return () => {
+       cancelAnimationFrame(raf);
+       window.removeEventListener("resize", resize);
+    };
+  }, [series, tNow]);
+
+  return <canvas ref={ref} style={{ width: "100%", height: 180, display:
+"block" }} />;
+}
+
+
+
+
+                                       17
+Key performance notes: - Decouple data ingestion from rendering; render from a buffer. - Use binary
+search / cursor indexes; avoid .filter() per frame in production. - If you need millions of points,
+consider WebGL/canvas progressive approaches (ECharts highlights progressive rendering and stream
+loading as performance features). 36
+
+
+Security posture (web + desktop)
+
+For desktop packaging, follow the official Electron security checklist if using Electron: - Don’t enable
+Node.js integration for remote content - Enable context isolation - Use process sandboxing - Define a
+strict CSP - Validate IPC senders/messages    37
+
+
+
+
+For Tauri, leverage its CSP tooling and minimised permissions/“allowlist” style configuration to reduce
+XSS impact. 38
+Also note that security researchers emphasise that changing frameworks changes the mechanics of
+exploitation, not the need for careful configuration and input validation. 39
+
+
+Legal and licensing disclaimers (demo-safe wording)
+
+Your demo should show: - OpenF1: user-facing notice that it’s an unofficial community project intended
+for non-commercial analysis; OpenF1 states CC BY‑NC‑SA 4.0 licensing and non-commercial positioning.
+ 40
+
+- Jolpica: non-commercial use + CC BY‑NC‑SA 4.0 and rate-limit compliance notice. 41
+- Formula 1 website/app data: avoid claims of official affiliation; Formula1.com guidelines restrict
+substantial reproduction/commercial use of timing/results data (and mention scraping). 29
+- If any part uses F1TV access, include a hard warning that terms prohibit scraping/text-and-data mining
+and other automated extraction. 42
+
+
+MVP plan for a “working demo” with import + replay + swanky UI
+
+MVP scope definition
+
+A credible demo should support: - Import one historical session (“dataset bundle”) from OpenF1 +
+(optionally) FastF1 export - Enrich with Jolpica metadata (event name, circuit, grid/results if needed) -
+Attach FIA PDFs for the same weekend - Replay controls: play/pause, 0.5×/1×/2×/8×, scrub ±30s, “jump
+to event” - UI surfaces: timing tower, driver inspector, stint chart, pit timeline, race-control feed,
+highlight cards, docs viewer
+
+
+Milestones and estimated effort (developer-weeks)
+
+Assuming one experienced full-stack dev (TypeScript + basic Python) and aiming at “polished demo”
+quality:
+
+
+      • Data hub + schema + replay (2.0–3.0 dev-weeks)
+        Canonical schema, importer(s), JSONL event store, replay clock, WebSocket API, deterministic
+        replay tests.
+
+
+      • Core UI shell + design system (1.5–2.5 dev-weeks)
+        Layout grid, tokens, navigation, responsive states, accessibility baseline.
+
+
+
+
+                                                     18
+     • Key components (2.0–3.5 dev-weeks)
+       Timing tower, driver cards, race control feed, stint chart, pit timeline, telemetry canvas,
+       highlights.
+
+
+     • Polish + packaging (1.5–3.0 dev-weeks)
+       Dataset bundling, offline mode, desktop wrapper (optional), performance passes, CI/CD.
+
+
+Total: 7–12 developer-weeks for a strong demo.
+
+
+
+  gantt
+    title Demo build timeline (indicative)
+    dateFormat YYYY-MM-DD
+    axisFormat %d %b
+
+     section Data hub
+     Canonical schema + JSONL store                      :a1, 2026-03-17, 10d
+     Importers (OpenF1 + Jolpica + FIA)                  :a2, after a1, 8d
+     Replay clock + WebSocket API                        :a3, after a2, 6d
+
+     section UI foundation
+     Design tokens + layout shell                        :b1, after a1, 10d
+     Accessibility baseline                              :b2, after b1, 4d
+
+     section Components
+     Timing tower + driver inspector                     :c1, after b1, 10d
+     Telemetry canvas + stint/pit charts                 :c2, after c1, 10d
+     Highlights + docs viewer                            :c3, after c2, 6d
+
+     section Hardening
+     Performance budgets + profiling                     :d1, after c2, 6d
+     Packaging (optional desktop) + CI/CD                :d2, after c3, 8d
+
+
+Dev environment setup (recommended stack)
+
+Baseline stack (web + local hub): - Frontend: TypeScript + React + Vite, CSS Modules or Tailwind-style
+utilities - Backend: Node (Fastify) or Python (FastAPI) replay server - Storage: filesystem JSONL + SQLite
+(for indexes); keep it simple for demo
+
+
+Optional add-ons: - Desktop: Tauri (Rust backend) wrapping the SPA
+- Tauri uses system WebViews across platforms, so keep an explicit browser-compatibility test matrix if
+you ship desktop widely. 43
+- FastF1 export: Python helper script (run at import time), relying on FastF1 caching and offline mode to
+make demos deterministic. 22
+
+
+CI/CD suggestions
+
+Use GitHub 44 Actions for: - Frontend: lint + typecheck + unit tests + build artefacts - Backend: unit tests
+for replay determinism + schema validation - Security: dependency scanning + CSP checks; for Electron
+follow the security checklist (nodeIntegration off, contextIsolation on, sandbox on). 45
+- Release: if shipping desktop, sign binaries and keep auto-update supply chain tight.
+
+
+
+                                                    19
+Next steps checklist
+       • Pick one historical session to target (OpenF1 session_key + one or two drivers) and confirm
+         you’re happy staying in the 2023+ window for the first demo. 40
+       • Decide packaging strategy: web-only MVP, or Tauri-wrapped demo for offline dataset imports
+         and a premium “installed” feel. 2
+       • Implement the canonical JSONL schema + replay clock and wire the UI to WebSocket “state
+         deltas”.
+       • Build the timing tower first (it drives the perception of “authentic motorsport product”), then the
+         driver inspector.
+       • Add telemetry canvas with strict frame budgets (aim ~10ms JS work per animation frame). 16
+       • Add legal notices into the UI footer/settings: OpenF1 + Jolpica non-commercial licensing and
+         Formula1.com timing-data restrictions. 46
+
+Requested sample inputs (to make the import/replay examples concrete): - One target OpenF1
+ session_key (or a race weekend + session name you want threaded through the UI) - Whether you
+want the demo to ship with a bundled dataset (zip/installer) or import on first run - Whether FastF1
+export is required in the demo pipeline, or OpenF1 alone is sufficient
+
+
+
+ 1   JustAman62/undercut-f1
+https://github.com/JustAman62/undercut-f1?utm_source=chatgpt.com
+
+ 2   12   44   tauri-apps/tauri at ssp.sh
+https://github.com/tauri-apps/tauri?ref=ssp.sh&utm_source=chatgpt.com
+
+ 3   Prerequisites
+https://electronjs.org/docs/latest/tutorial/tutorial-prerequisites?utm_source=chatgpt.com
+
+ 4   18   21   https://raw.githubusercontent.com/br-g/openf1/main...
+https://raw.githubusercontent.com/br-g/openf1/main/documentation/includes/_api_endpoints.md?
+utm_source=chatgpt.com
+
+ 5   22   Rate Limits and Caching — FastF1 (3.8.1)
+https://docs.fastf1.dev/api_reference/cache_and_rate_limits.html
+
+ 6   26   jolpica-f1/docs/rate_limits.md at main · jolpica/jolpica-f1 · GitHub
+https://github.com/jolpica/jolpica-f1/blob/main/docs/rate_limits.md
+
+ 7   Decision documents
+https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2026-2072?
+utm_source=chatgpt.com
+
+ 8   29   Guidelines | Formula 1®
+https://www.formula1.com/en/information/guidelines.4EOKE9RRqevL4niTK9kWyt?utm_source=chatgpt.com
+
+ 9   Desktop support for Flutter
+https://docs.flutter.dev/platform-integration/desktop?utm_source=chatgpt.com
+
+10   Why Electron
+https://electronjs.org/docs/latest/why-electron?utm_source=chatgpt.com
+
+11   37   45   Security
+https://electronjs.org/docs/latest/tutorial/security?utm_source=chatgpt.com
+
+13   Web Content Accessibility Guidelines (WCAG) 2.2
+https://www.w3.org/TR/WCAG22/?utm_source=chatgpt.com
+
+
+
+
+                                                            20
+14   Real-time and historical Formula 1 data
+https://openf1.org/docs/?utm_source=chatgpt.com
+
+15   Window: requestAnimationFrame() method - Web APIs | MDN
+https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame?utm_source=chatgpt.com
+
+16   Measure performance with the RAIL model | Articles
+https://web.dev/articles/rail?utm_source=chatgpt.com
+
+17   Animation performance and frame rate - MDN Web Docs
+https://developer.mozilla.org/en-US/docs/Web/Performance/Guides/Animation_performance_and_frame_rate?
+utm_source=chatgpt.com
+
+19   40   46   OpenF1 API | The open source API for Formula 1 data
+https://openf1.org/?utm_source=chatgpt.com
+
+20   Using OpenF1 with authentication
+https://openf1.org/auth.html?utm_source=chatgpt.com
+
+23   Fast-F1/fastf1/livetiming/client.py at main
+https://github.com/theOehrly/Fast-F1/blob/master/fastf1/livetiming/client.py?utm_source=chatgpt.com
+
+24   25   jolpica-f1/README.md at main
+https://github.com/jolpica/jolpica-f1/blob/main/README.md?utm_source=chatgpt.com
+
+27   41   jolpica-f1/TERMS.md at main
+https://github.com/jolpica/jolpica-f1/blob/main/TERMS.md?utm_source=chatgpt.com
+
+28   [ENH] Extra telemetry/data feeds available #248
+https://github.com/theOehrly/Fast-F1/issues/248?utm_source=chatgpt.com
+
+30   Time, Date and Timing - Explanation - FastF1 3.6.1
+https://docs.fastf1.dev/time_explanation.html?utm_source=chatgpt.com
+
+31   Compatibility with other libraries - requests-cache
+https://requests-cache.readthedocs.io/en/stable/user_guide/compatibility.html?utm_source=chatgpt.com
+
+32   d3/d3: Bring data to life with SVG, Canvas and HTML. : ...
+https://github.com/d3/d3?utm_source=chatgpt.com
+
+33   plotly/plotly.js: Open-source JavaScript charting library ...
+https://github.com/plotly/plotly.js/?utm_source=chatgpt.com
+
+34   36   Apache ECharts
+https://echarts.apache.org/?utm_source=chatgpt.com
+
+35   Our new EULA makes free usage clearer
+https://www.highcharts.com/blog/news/our-new-eula-makes-free-usage-clearer/?utm_source=chatgpt.com
+
+38   Content Security Policy (CSP)
+https://v2.tauri.app/security/csp/?utm_source=chatgpt.com
+
+39   Beyond Electron: Attacking Alternative Desktop…
+https://bishopfox.com/blog/beyond-electron-attacking-alternative-desktop-application-frameworks?
+utm_source=chatgpt.com
+
+42   F1 TV - SUBSCRIPTION TERMS
+https://www.formula1.com/en/information/f1-tv-subscription-terms-us-2024.384sQqjslhQ2Rhm1LdKgfD?
+utm_source=chatgpt.com
+
+43   Process Model | Tauri v1
+https://tauri.app/v1/references/architecture/process-model?utm_source=chatgpt.com
+
+
+
+
+                                                              21
+

@@ -1,0 +1,247 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { PlaybackBar } from "../components/PlaybackBar";
+import { RaceControlFeed } from "../components/RaceControlFeed";
+import { TimingTower } from "../components/TimingTower";
+import { TrackMap } from "../components/TrackMap";
+import { useReplay } from "../app/providers/ReplayProvider";
+import type { SessionManifest } from "../types";
+
+const CIRCUIT_LABELS: Record<string, string> = {
+  Singapore: "SG Singapore Grand Prix",
+  Silverstone: "GB British Grand Prix",
+  Monaco: "MC Monaco Grand Prix",
+  Monza: "IT Italian Grand Prix",
+  Spa: "BE Belgian Grand Prix",
+  Suzuka: "JP Japanese Grand Prix",
+  "Abu Dhabi": "AE Abu Dhabi Grand Prix",
+  Austin: "US United States Grand Prix",
+  Baku: "AZ Azerbaijan Grand Prix",
+};
+
+function getDisplaySessionType(session: SessionManifest): string {
+  const name = (session.session_name || "").toLowerCase();
+  if (name.includes("sprint qualifying") || name.includes("sprint shootout")) {
+    return "Sprint Qualifying";
+  }
+  if (name.includes("sprint")) {
+    return "Sprint";
+  }
+  return session.session_type;
+}
+
+export function ReplayStudioPage() {
+  const navigate = useNavigate();
+  const { sessionKey } = useParams();
+  const {
+    activeSession,
+    layout,
+    layoutLoading,
+    tower,
+    raceControl,
+    selectedDriver,
+    setSelectedDriver,
+    replayStatus,
+    sessionError,
+    connected,
+    isPlaying,
+    liveStatus,
+    liveBusy,
+    lastStateUpdateAt,
+    ensureSessionKey,
+    clearActiveSession,
+    play,
+    pause,
+    restart,
+    seekBack,
+    seekForward,
+    seekTo,
+    setSpeed,
+    startLive,
+    stopLive,
+  } = useReplay();
+  const mainRef = useRef<HTMLElement | null>(null);
+  const [rightPaneWidth, setRightPaneWidth] = useState(560);
+
+  const canResize = useMemo(() => window.matchMedia("(min-width: 1101px)").matches, []);
+
+  const onSplitterMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!canResize) {
+      return;
+    }
+
+    const startX = event.clientX;
+    const startWidth = rightPaneWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const containerWidth = mainRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+      const min = 420;
+      const max = Math.max(520, Math.floor(containerWidth * 0.62));
+      const next = Math.min(max, Math.max(min, startWidth - deltaX));
+      setRightPaneWidth(next);
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
+  useEffect(() => {
+    if (!sessionKey) {
+      return;
+    }
+    const parsed = Number(sessionKey);
+    if (Number.isFinite(parsed)) {
+      ensureSessionKey(parsed);
+    }
+  }, [ensureSessionKey, sessionKey]);
+
+  if (!activeSession) {
+    if (sessionKey && Number.isFinite(Number(sessionKey))) {
+      return (
+        <div className="page-surface page-surface--centered">
+          <div className="empty-state-panel">
+            <h1 className="page-title">Replay Studio</h1>
+            <p className="page-subtitle">Loading session {sessionKey}...</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="page-surface page-surface--centered">
+        <div className="empty-state-panel">
+          <h1 className="page-title">Replay Studio</h1>
+          <p className="page-subtitle">
+            Choose a session from the archive to load the track map, timing tower, race control, and replay controls.
+          </p>
+          <button className="empty-state-action" onClick={() => navigate("/")}>
+            Open Archive
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const circuitLabel = CIRCUIT_LABELS[activeSession.circuit_short_name] ?? activeSession.circuit_short_name;
+  const sessionLabel = getDisplaySessionType(activeSession);
+
+  // Tick every second so the stale badge re-evaluates without needing a WS message.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Stale: connected, session loaded, but no update for >5 seconds while playing.
+  const dataAgeMs = lastStateUpdateAt !== null ? now - lastStateUpdateAt : null;
+  const isStale = connected && isPlaying && dataAgeMs !== null && dataAgeMs > 5_000;
+  // Partial: connected but tower hasn't arrived yet.
+  const isPartial = connected && tower === null;
+
+  return (
+    <div className="replay-root">
+      <header className="replay-topbar">
+        <button
+          className="topbar-back"
+          onClick={() => {
+            clearActiveSession();
+            navigate("/");
+          }}
+        >
+          &#8592; Sessions
+        </button>
+        <div className="topbar-session">
+          <span className="topbar-circuit">{circuitLabel}</span>
+          <span className="topbar-type">{sessionLabel}</span>
+          <span className="topbar-key">#{activeSession.session_key}</span>
+          {isStale && (
+            <span className="topbar-data-badge topbar-data-badge--stale" title={`No update for ${Math.round((dataAgeMs ?? 0) / 1000)}s`}>
+              Stale
+            </span>
+          )}
+          {!isStale && isPartial && (
+            <span className="topbar-data-badge topbar-data-badge--partial" title="Waiting for first data snapshot">
+              Loading
+            </span>
+          )}
+        </div>
+        <div className="topbar-live">
+          <span className={`topbar-live-chip ${liveStatus?.connected ? "chip-on" : "chip-off"}`}>
+            {liveStatus?.connected ? "Live On" : "Live Off"}
+          </span>
+          <button
+            className="topbar-live-btn"
+            onClick={liveStatus?.connected ? stopLive : startLive}
+            disabled={liveBusy}
+          >
+            {liveBusy ? "Working..." : liveStatus?.connected ? "Stop Live" : "Start Live"}
+          </button>
+          {liveStatus ? <span className="topbar-live-metrics">{liveStatus.eventsEmitted} events</span> : null}
+        </div>
+        <div className={`topbar-status ${connected ? "status-on" : "status-off"}`}>
+          <span className="status-dot" />
+          {connected ? "WS Connected" : "WS Connecting..."}
+        </div>
+      </header>
+
+      <main
+        ref={mainRef}
+        className="replay-main"
+        style={
+          canResize
+            ? ({
+                ["--replay-right-width" as string]: `${rightPaneWidth}px`,
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
+        <section className="replay-left">
+          <TrackMap
+            layout={layout}
+            layoutLoading={layoutLoading}
+            tower={tower}
+            replayTimeMs={replayStatus.currentReplayTimeMs}
+          />
+        </section>
+        <div
+          className="replay-splitter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize timing panel"
+          onMouseDown={onSplitterMouseDown}
+        />
+        <section className="replay-right">
+          {sessionError ? (
+            <div className="replay-error-banner" role="alert">
+              Replay error: {sessionError}
+            </div>
+          ) : null}
+          <TimingTower tower={tower} selectedDriver={selectedDriver} onSelectDriver={setSelectedDriver} />
+          <RaceControlFeed messages={raceControl} />
+        </section>
+      </main>
+
+      <PlaybackBar
+        status={replayStatus}
+        connected={connected}
+        isPlaying={isPlaying}
+        durationMs={replayStatus.durationMs}
+        onPlay={play}
+        onPause={pause}
+        onRestart={restart}
+        onSeekStart={() => seekTo(0)}
+        onSeekEnd={() => seekTo(replayStatus.durationMs ?? replayStatus.currentReplayTimeMs)}
+        onSeekBack={seekBack}
+        onSeekForward={seekForward}
+        onSeekTo={seekTo}
+        onSpeedChange={setSpeed}
+      />
+    </div>
+  );
+}
