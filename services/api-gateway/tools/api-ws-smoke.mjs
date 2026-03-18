@@ -2,9 +2,17 @@ import { WebSocket } from "ws";
 
 const HTTP_BASE = process.env.SMOKE_HTTP_BASE || "http://localhost:3000";
 const WS_URL = process.env.SMOKE_WS_URL || "ws://localhost:3000";
-const SESSION_KEY = Number(process.env.SMOKE_SESSION_KEY || 9465);
-const REQUEST_TIMEOUT_MS = Number(process.env.SMOKE_REQUEST_TIMEOUT_MS || 20000);
-const WS_TIMEOUT_MS = Number(process.env.SMOKE_WS_TIMEOUT_MS || 25000);
+const SESSION_KEY = parsePositiveInt(process.env.SMOKE_SESSION_KEY, 9465);
+const REQUEST_TIMEOUT_MS = parsePositiveInt(process.env.SMOKE_REQUEST_TIMEOUT_MS, 20000);
+const WS_TIMEOUT_MS = parsePositiveInt(process.env.SMOKE_WS_TIMEOUT_MS, 25000);
+
+function parsePositiveInt(rawValue, fallback) {
+  const value = Number(rawValue);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.floor(value);
+}
 
 function assert(condition, message) {
   if (!condition) {
@@ -60,6 +68,14 @@ async function runHttpSmoke() {
   checks.push({ name: "GET /api/calendar/diff", status: calendarDiff.status });
   assert(calendarDiff.status === 200, "GET /api/calendar/diff expected 200");
 
+  const invalidCalendarYear = await fetchJson("/api/calendar/1900");
+  checks.push({ name: "GET /api/calendar/1900", status: invalidCalendarYear.status });
+  assert(invalidCalendarYear.status === 400, "GET /api/calendar/1900 expected 400");
+
+  const invalidCalendarDiff = await fetchJson("/api/calendar/diff?from=2024&to=2024");
+  checks.push({ name: "GET /api/calendar/diff?from=2024&to=2024", status: invalidCalendarDiff.status });
+  assert(invalidCalendarDiff.status === 400, "GET /api/calendar/diff?from=2024&to=2024 expected 400");
+
   const invalidLayout = await fetchJson("/api/sessions/not-a-number/layout");
   checks.push({ name: "GET /api/sessions/not-a-number/layout", status: invalidLayout.status });
   assert(invalidLayout.status === 400, "GET /api/sessions/not-a-number/layout expected 400");
@@ -75,10 +91,41 @@ async function runHttpSmoke() {
 function waitFor(ws, predicate, description, timeoutMs, options = {}) {
   const { allowErrorMessages = false } = options;
   return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
+    let settled = false;
+
+    const cleanup = () => {
       ws.off("message", onMessage);
-      reject(new Error(`Timed out waiting for ${description}`));
+      ws.off("close", onClose);
+      ws.off("error", onError);
+    };
+
+    const settleReject = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      cleanup();
+      reject(error);
+    };
+
+    const settleResolve = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      cleanup();
+      resolve(value);
+    };
+
+    const timeoutId = setTimeout(() => {
+      settleReject(new Error(`Timed out waiting for ${description}`));
     }, timeoutMs);
+
+    function onClose(code) {
+      settleReject(new Error(`WebSocket closed while waiting for ${description} (code=${code})`));
+    }
+
+    function onError(err) {
+      settleReject(err instanceof Error ? err : new Error(String(err)));
+    }
 
     function onMessage(raw) {
       let msg;
@@ -89,20 +136,18 @@ function waitFor(ws, predicate, description, timeoutMs, options = {}) {
       }
 
       if (msg?.type === "error" && !allowErrorMessages) {
-        clearTimeout(timeoutId);
-        ws.off("message", onMessage);
-        reject(new Error(`Server reported error while waiting for ${description}: ${msg.message || "unknown"}`));
+        settleReject(new Error(`Server reported error while waiting for ${description}: ${msg.message || "unknown"}`));
         return;
       }
 
       if (predicate(msg)) {
-        clearTimeout(timeoutId);
-        ws.off("message", onMessage);
-        resolve(msg);
+        settleResolve(msg);
       }
     }
 
     ws.on("message", onMessage);
+    ws.on("close", onClose);
+    ws.on("error", onError);
   });
 }
 
@@ -114,6 +159,8 @@ async function runWsSmoke() {
     stateDeltaCount: 0,
     speedAck: false,
     negativeChecks: {
+      emptySessionKeyError: false,
+      invalidSessionKeyError: false,
       unknownOpError: false,
       invalidSeekError: false,
       malformedJsonError: false,
@@ -123,16 +170,43 @@ async function runWsSmoke() {
   };
 
   await new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => reject(new Error("Timed out opening WebSocket connection")), WS_TIMEOUT_MS);
-    ws.once("open", () => {
+    let settled = false;
+
+    const cleanup = () => {
+      ws.off("open", onOpen);
+      ws.off("error", onError);
+    };
+
+    const settleReject = (error) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeoutId);
-      wsSummary.opened = true;
+      cleanup();
+      reject(error);
+    };
+
+    const settleResolve = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      cleanup();
       resolve();
-    });
-    ws.once("error", (err) => {
-      clearTimeout(timeoutId);
-      reject(err);
-    });
+    };
+
+    function onOpen() {
+      wsSummary.opened = true;
+      settleResolve();
+    }
+
+    function onError(err) {
+      settleReject(err);
+    }
+
+    const timeoutId = setTimeout(() => {
+      settleReject(new Error("Timed out opening WebSocket connection"));
+    }, WS_TIMEOUT_MS);
+    ws.once("open", onOpen);
+    ws.once("error", onError);
   });
 
   ws.send(JSON.stringify({ op: "load_session", sessionKey: String(SESSION_KEY) }));
@@ -143,6 +217,26 @@ async function runWsSmoke() {
     WS_TIMEOUT_MS
   );
   wsSummary.sessionLoaded = true;
+
+  ws.send(JSON.stringify({ op: "load_session", sessionKey: "   " }));
+  await waitFor(
+    ws,
+    (msg) => msg?.type === "error" && String(msg?.message || "").includes("non-empty 'sessionKey'"),
+    "error for empty session key",
+    WS_TIMEOUT_MS,
+    { allowErrorMessages: true }
+  );
+  wsSummary.negativeChecks.emptySessionKeyError = true;
+
+  ws.send(JSON.stringify({ op: "load_session", sessionKey: "abc" }));
+  await waitFor(
+    ws,
+    (msg) => msg?.type === "error" && String(msg?.message || "").includes("positive integer 'sessionKey'"),
+    "error for invalid session key",
+    WS_TIMEOUT_MS,
+    { allowErrorMessages: true }
+  );
+  wsSummary.negativeChecks.invalidSessionKeyError = true;
 
   ws.send(JSON.stringify({ op: "speed", speed: 1.5 }));
   await waitFor(ws, (msg) => msg?.type === "speed_set" && msg?.speed === 1.5, "speed_set", WS_TIMEOUT_MS);

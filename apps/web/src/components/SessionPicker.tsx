@@ -4,6 +4,7 @@ import type { LayoutPoint, SessionManifest } from "../types";
 interface Props {
   sessions: SessionManifest[];
   loading: boolean;
+  error?: string | null;
   onSelect: (session: SessionManifest) => void;
 }
 
@@ -226,6 +227,15 @@ function CircuitTrackPreview({ sessionKeys, title }: { sessionKeys: number[]; ti
     const controller = new AbortController();
     const candidates = sessionKeys.slice(0, 10);
 
+    if (candidates.length === 0) {
+      setPoints(null);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+        controller.abort();
+      };
+    }
+
     async function loadFirstAvailable(): Promise<void> {
       setLoading(true);
 
@@ -309,6 +319,9 @@ function buildSeasonGroups(sessions: SessionManifest[]): SeasonGroup[] {
   const byYear = new Map<number, Map<string, SessionManifest[]>>();
   for (const s of sessions) {
     const year = getSeasonYear(s);
+    if (!Number.isFinite(year) || year <= 0) {
+      continue;
+    }
     const circuit = s.circuit_short_name || "Unknown";
     if (!byYear.has(year)) byYear.set(year, new Map());
     const ym = byYear.get(year)!;
@@ -345,9 +358,10 @@ function buildSeasonGroups(sessions: SessionManifest[]): SeasonGroup[] {
 
 // ── Home View ─────────────────────────────────────────────────────────────────
 
-function HomeView({ seasons, loading, onPickYear }: {
+function HomeView({ seasons, loading, error, onPickYear }: {
   seasons: SeasonGroup[];
   loading: boolean;
+  error?: string | null;
   onPickYear: (year: number) => void;
 }) {
   const currentYear = new Date().getFullYear();
@@ -367,7 +381,15 @@ function HomeView({ seasons, loading, onPickYear }: {
 
       {loading && <div className="nav-loading">Loading archive…</div>}
 
-      {!loading && seasons.length === 0 && (
+      {!loading && error && (
+        <div className="nav-empty nav-empty--error" role="alert">
+          <p>Archive unavailable.</p>
+          <p>{error}</p>
+          <code>Start the API gateway with ./.tools/node/pnpm.cmd dev:server</code>
+        </div>
+      )}
+
+      {!loading && !error && seasons.length === 0 && (
         <div className="nav-empty">
           <p>No sessions imported yet.</p>
           <code>pnpm import:openf1:year -- --year 2024</code>
@@ -570,7 +592,7 @@ function CircuitView({ circuitGroup, year, roundNum, onBack, onSelect }: {
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export function SessionPicker({ sessions, loading, onSelect }: Props) {
+export function SessionPicker({ sessions, loading, error = null, onSelect }: Props) {
   const [nav, setNav] = useState<NavState>({ view: "home" });
   const seasons = buildSeasonGroups(sessions);
   const circuitPreviewKeys = useMemo(() => {
@@ -594,6 +616,7 @@ export function SessionPicker({ sessions, loading, onSelect }: Props) {
       <HomeView
         seasons={seasons}
         loading={loading}
+        error={error}
         onPickYear={(year) => setNav({ view: "year", year })}
       />
     );

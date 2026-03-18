@@ -18,7 +18,7 @@ function fmtInterval(ms?: number | null): string {
 
 export function StrategyLabPage() {
   const navigate = useNavigate();
-  const { activeSession, tower, stints, insights } = useReplay();
+  const { activeSession, tower, stints, insights, sessionsError } = useReplay();
 
   if (!activeSession || !tower) {
     return (
@@ -26,10 +26,12 @@ export function StrategyLabPage() {
         <div className="empty-state-panel">
           <h1 className="page-title">Strategy Lab</h1>
           <p className="page-subtitle">
-            This route is ready for stint summaries and gaining-losing insights. Load a replay so the first analytics layer has a live state to read from.
+            {sessionsError
+              ? `Archive/API connection unavailable: ${sessionsError}`
+              : "This route is ready for stint summaries and gaining-losing insights. Load a replay so the first analytics layer has a live state to read from."}
           </p>
           <button className="empty-state-action" onClick={() => navigate("/")}>
-            Choose Session
+            {sessionsError ? "Open Archive" : "Choose Session"}
           </button>
         </div>
       </div>

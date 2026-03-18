@@ -25,7 +25,7 @@ function formatLap(ms?: number | null): string {
 
 export function DriverInspectorPage() {
   const navigate = useNavigate();
-  const { activeSession, tower, selectedDriver, setSelectedDriver } = useReplay();
+  const { activeSession, tower, selectedDriver, setSelectedDriver, sessionsError } = useReplay();
 
   if (!activeSession || !tower) {
     return (
@@ -33,10 +33,12 @@ export function DriverInspectorPage() {
         <div className="empty-state-panel">
           <h1 className="page-title">Driver Inspector</h1>
           <p className="page-subtitle">
-            Load a replay session first. This area is where driver-focused comparisons, pace detail, and telemetry overlays will live.
+            {sessionsError
+              ? `Archive/API connection unavailable: ${sessionsError}`
+              : "Load a replay session first. This area is where driver-focused comparisons, pace detail, and telemetry overlays will live."}
           </p>
           <button className="empty-state-action" onClick={() => navigate("/")}>
-            Choose Session
+            {sessionsError ? "Open Archive" : "Choose Session"}
           </button>
         </div>
       </div>

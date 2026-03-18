@@ -1,6 +1,7 @@
 import express from "express";
 import { WebSocketServer } from "ws";
 import { createServer } from "http";
+import type { NextFunction, Request, Response } from "express";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -21,16 +22,117 @@ loadEnv({ path: path.join(repoRoot, ".env") });
 loadEnv({ path: path.join(repoRoot, ".env.local"), override: true });
 
 const app = express();
-const port = Number(process.env.PORT || 3000);
+app.disable("x-powered-by");
+function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
+
+const port = parsePositiveIntEnv(process.env.PORT, 3000);
 // Resolve DATA_DIR relative to repo root so `./data` works regardless of cwd
 const rawDataDir = process.env.DATA_DIR || "data";
 const dataDir = path.isAbsolute(rawDataDir) ? rawDataDir : path.join(repoRoot, rawDataDir);
 const persistLiveEvents = process.env.LIVE_PERSIST_EVENTS === "1";
-const liveMaxFileBytes = Number(process.env.LIVE_MAX_FILE_MB || 256) * 1024 * 1024;
+const liveMaxFileBytes = parsePositiveIntEnv(process.env.LIVE_MAX_FILE_MB, 256) * 1024 * 1024;
+const wsMaxPayloadBytes = parsePositiveIntEnv(process.env.WS_MAX_PAYLOAD_KB, 256) * 1024;
 const liveIngest = new OpenF1LiveIngest();
 let liveSessionKey: number | null = null;
 const liveProfile = (process.env.LIVE_IMPORT_PROFILE as ImportProfile) || "standard";
 const liveCarDataCounter = new Map<number, number>();
+
+interface LayoutPoint {
+  x: number;
+  y: number;
+}
+
+interface LayoutManifest {
+  session_key?: number;
+  meeting_key?: number;
+  year?: number;
+  circuit_short_name?: string;
+  date_start_utc?: string;
+  drivers?: Array<{ number?: number }>;
+}
+
+function isLayoutPointArray(value: unknown): value is LayoutPoint[] {
+  return Array.isArray(value) && value.every((item) => {
+    return item && typeof item === "object" && Number.isFinite((item as LayoutPoint).x) && Number.isFinite((item as LayoutPoint).y);
+  });
+}
+
+async function readJsonFile<T>(filePath: string): Promise<T | null> {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function readLayoutCache(sessionKey: number): Promise<LayoutPoint[] | null> {
+  const candidateFiles = [
+    path.join(dataDir, `layout_v2_${sessionKey}.json`),
+    path.join(dataDir, `layout_${sessionKey}.json`),
+  ];
+
+  for (const filePath of candidateFiles) {
+    const parsed = await readJsonFile<unknown>(filePath);
+    if (isLayoutPointArray(parsed) && parsed.length >= 8) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+async function findCircuitLayoutFallback(targetSessionKey: number, targetManifest: LayoutManifest | null): Promise<LayoutPoint[] | null> {
+  if (!targetManifest?.circuit_short_name) {
+    return null;
+  }
+
+  const files = await fs.readdir(dataDir);
+  const manifestFiles = files.filter((fileName) => fileName.startsWith("manifest_") && fileName.endsWith(".json"));
+  const manifests = await Promise.all(
+    manifestFiles.map(async (fileName) => {
+      const manifest = await readJsonFile<LayoutManifest>(path.join(dataDir, fileName));
+      return manifest;
+    })
+  );
+
+  const candidates = manifests
+    .filter((manifest): manifest is LayoutManifest => Boolean(manifest?.circuit_short_name && Number.isInteger(manifest.session_key)))
+    .filter((manifest) => manifest.session_key !== targetSessionKey)
+    .filter((manifest) => manifest.circuit_short_name === targetManifest.circuit_short_name)
+    .sort((a, b) => {
+      const meetingMatchA = a.meeting_key === targetManifest.meeting_key ? 1 : 0;
+      const meetingMatchB = b.meeting_key === targetManifest.meeting_key ? 1 : 0;
+      if (meetingMatchA !== meetingMatchB) {
+        return meetingMatchB - meetingMatchA;
+      }
+
+      const yearDistanceA = Math.abs((a.year ?? 0) - (targetManifest.year ?? 0));
+      const yearDistanceB = Math.abs((b.year ?? 0) - (targetManifest.year ?? 0));
+      if (yearDistanceA !== yearDistanceB) {
+        return yearDistanceA - yearDistanceB;
+      }
+
+      const timeA = new Date(a.date_start_utc || 0).getTime();
+      const timeB = new Date(b.date_start_utc || 0).getTime();
+      return timeB - timeA;
+    });
+
+  for (const candidate of candidates) {
+    const layout = await readLayoutCache(candidate.session_key as number);
+    if (layout) {
+      return layout;
+    }
+  }
+
+  return null;
+}
 
 async function fetchOpenF1Json<T>(url: string): Promise<T> {
   const response = await fetch(url, { signal: AbortSignal.timeout(45_000) });
@@ -67,11 +169,17 @@ async function writeImportedDataset(outputDir: string, sessionKey: number, event
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
 }
 
-app.use(express.json());
+app.use(express.json({ limit: "256kb" }));
+app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof SyntaxError && "body" in (err as object)) {
+    return res.status(400).json({ error: "Invalid JSON request body" });
+  }
+  next(err);
+});
 
 // Create HTTP server for WebSocket upgrade
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: wsMaxPayloadBytes });
 
 // Initialize replay service
 const replayService = new ReplayService({ dataDir });
@@ -155,15 +263,24 @@ wss.on("connection", async (ws) => {
             sendError("load_session requires 'sessionKey' as string or number");
             break;
           }
+          if (typeof message.sessionKey === "string" && message.sessionKey.trim().length === 0) {
+            sendError("load_session requires non-empty 'sessionKey'");
+            break;
+          }
+          const normalizedSessionKey = Number(message.sessionKey);
+          if (!Number.isInteger(normalizedSessionKey) || normalizedSessionKey <= 0) {
+            sendError("load_session requires positive integer 'sessionKey'");
+            break;
+          }
 
           replayService
-            .loadSession(message.sessionKey)
+            .loadSession(normalizedSessionKey)
             .then(() => {
               const { sessionDurationMs } = replayService.getStatus();
               ws.send(
                 JSON.stringify({
                   type: "session_loaded",
-                  sessionKey: message.sessionKey,
+                  sessionKey: normalizedSessionKey,
                   session_duration_ms: sessionDurationMs,
                 })
               );
@@ -290,7 +407,8 @@ app.post("/api/sessions/:key/import", async (req, res) => {
 // Start live ingest
 app.post("/api/live/start", async (req, res) => {
   try {
-    const sessionKey = Number(req.body?.sessionKey || process.env.OPENF1_LIVE_SESSION_KEY || 0);
+    const rawSessionKey = req.body?.sessionKey ?? process.env.OPENF1_LIVE_SESSION_KEY ?? 0;
+    const sessionKey = Number(rawSessionKey);
     if (!Number.isInteger(sessionKey) || sessionKey <= 0) {
       return res.status(400).json({ error: "sessionKey is required" });
     }
@@ -299,6 +417,7 @@ app.post("/api/live/start", async (req, res) => {
       await liveIngest.stop();
     }
 
+    liveCarDataCounter.clear();
     liveSessionKey = sessionKey;
     await liveIngest.start({
       sessionKey,
@@ -337,17 +456,24 @@ app.get("/api/sessions", async (req, res) => {
       files
         .filter((f) => f.startsWith("manifest_") && f.endsWith(".json"))
         .map(async (f) => {
-          const json = await fs.readFile(path.join(dataDir, f), "utf8");
-          return JSON.parse(json);
+          try {
+            const json = await fs.readFile(path.join(dataDir, f), "utf8");
+            return JSON.parse(json);
+          } catch {
+            return null;
+          }
         })
     );
-    const sorted = manifests.sort((a, b) => {
+    const validManifests = manifests.filter((item): item is Record<string, any> => {
+      return Boolean(item && Number.isFinite(Number(item.session_key)));
+    });
+    const sorted = validManifests.sort((a, b) => {
       const ta = new Date(a.date_start_utc || a.created_utc || 0).getTime();
       const tb = new Date(b.date_start_utc || b.created_utc || 0).getTime();
       if (Number.isFinite(ta) && Number.isFinite(tb) && ta !== tb) {
         return tb - ta;
       }
-      return b.session_key - a.session_key;
+      return Number(b.session_key) - Number(a.session_key);
     });
     res.json(sorted);
   } catch (err) {
@@ -411,12 +537,20 @@ app.get("/api/calendar/diff", async (req, res) => {
 
     const fromCircuits = new Map<number, ReturnType<typeof normalize>>();
     for (const meeting of fromMeetings) {
-      fromCircuits.set(Number(meeting.circuit_key), normalize(meeting));
+      const circuitKey = Number(meeting.circuit_key);
+      if (!Number.isFinite(circuitKey)) {
+        continue;
+      }
+      fromCircuits.set(circuitKey, normalize(meeting));
     }
 
     const toCircuits = new Map<number, ReturnType<typeof normalize>>();
     for (const meeting of toMeetings) {
-      toCircuits.set(Number(meeting.circuit_key), normalize(meeting));
+      const circuitKey = Number(meeting.circuit_key);
+      if (!Number.isFinite(circuitKey)) {
+        continue;
+      }
+      toCircuits.set(circuitKey, normalize(meeting));
     }
 
     const added: ReturnType<typeof normalize>[] = [];
@@ -449,25 +583,29 @@ app.get("/api/calendar/diff", async (req, res) => {
 // Track layout — circuit shape sampled from OpenF1 location data, cached to disk
 app.get("/api/sessions/:key/layout", async (req, res) => {
   const key = Number(req.params.key);
-  if (isNaN(key)) return res.status(400).json({ error: "Invalid session key" });
+  if (!Number.isInteger(key) || key <= 0) return res.status(400).json({ error: "Invalid session key" });
 
   const cacheFile = path.join(dataDir, `layout_v2_${key}.json`);
 
-  // Serve from disk cache if available
-  try {
-    const cached = await fs.readFile(cacheFile, "utf8");
-    return res.json(JSON.parse(cached));
-  } catch {
-    // Cache miss — fetch live
+  const cachedLayout = await readLayoutCache(key);
+  if (cachedLayout) {
+    return res.json(cachedLayout);
+  }
+
+  const manifestPath = path.join(dataDir, `manifest_${key}.json`);
+  const targetManifest = await readJsonFile<LayoutManifest>(manifestPath);
+
+  const localFallbackLayout = await findCircuitLayoutFallback(key, targetManifest);
+  if (localFallbackLayout) {
+    await fs.writeFile(cacheFile, JSON.stringify(localFallbackLayout), "utf8");
+    return res.json(localFallbackLayout);
   }
 
   // Build a priority-ordered list of driver numbers to try.
   // Prefer drivers from the session manifest; fall back to common numbers.
   let candidateDrivers: number[] = [55, 1, 44, 16, 4, 63, 14, 11];
   try {
-    const manifestPath = path.join(dataDir, `manifest_${key}.json`);
-    const manifestJson = await fs.readFile(manifestPath, "utf8");
-    const manifest = JSON.parse(manifestJson);
+    const manifest = targetManifest;
     if (Array.isArray(manifest?.drivers) && manifest.drivers.length > 0) {
       const manifestNums: number[] = manifest.drivers
         .map((d: any) => Number(d.number))
@@ -476,7 +614,9 @@ app.get("/api/sessions/:key/layout", async (req, res) => {
       const preferred = manifestNums.includes(55)
         ? [55, ...manifestNums.filter((n) => n !== 55)]
         : manifestNums;
-      candidateDrivers = preferred.slice(0, 6);
+      if (preferred.length > 0) {
+        candidateDrivers = preferred.slice(0, 6);
+      }
     }
   } catch {
     // Manifest not available; use hardcoded fallback candidates.
@@ -569,7 +709,12 @@ server.listen(port, () => {
 });
 
 // Graceful shutdown
-process.on("SIGTERM", () => {
+let shuttingDown = false;
+function shutdown() {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
   console.log("Shutting down...");
   void liveIngest.stop();
   replayService.stop();
@@ -577,4 +722,7 @@ process.on("SIGTERM", () => {
     console.log("Server closed");
     process.exit(0);
   });
-});
+}
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

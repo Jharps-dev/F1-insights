@@ -63,6 +63,7 @@ export function ReplayStudioPage() {
     stopLive,
   } = useReplay();
   const mainRef = useRef<HTMLElement | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
   const [rightPaneWidth, setRightPaneWidth] = useState(() => {
     if (typeof window === "undefined") {
       return 560;
@@ -108,6 +109,8 @@ export function ReplayStudioPage() {
       return;
     }
 
+    dragCleanupRef.current?.();
+
     const startX = event.clientX;
     const startWidth = rightPaneWidth;
 
@@ -123,24 +126,34 @@ export function ReplayStudioPage() {
     const onMouseUp = () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      dragCleanupRef.current = null;
     };
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
+    dragCleanupRef.current = onMouseUp;
   };
+
+  useEffect(() => {
+    return () => {
+      dragCleanupRef.current?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessionKey) {
       return;
     }
     const parsed = Number(sessionKey);
-    if (Number.isFinite(parsed)) {
+    if (Number.isInteger(parsed) && parsed > 0) {
       ensureSessionKey(parsed);
     }
   }, [ensureSessionKey, sessionKey]);
 
   if (!activeSession) {
-    if (sessionKey && Number.isFinite(Number(sessionKey))) {
+    const archiveUnavailable = Boolean(sessionsError);
+
+    if (sessionKey && Number.isInteger(Number(sessionKey)) && Number(sessionKey) > 0) {
       return (
         <div className="page-surface page-surface--centered">
           <div className="empty-state-panel">
@@ -156,10 +169,12 @@ export function ReplayStudioPage() {
         <div className="empty-state-panel">
           <h1 className="page-title">Replay Studio</h1>
           <p className="page-subtitle">
-            Choose a session from the archive to load the track map, timing tower, race control, and replay controls.
+            {archiveUnavailable
+              ? `Archive/API connection unavailable: ${sessionsError}`
+              : "Choose a session from the archive to load the track map, timing tower, race control, and replay controls."}
           </p>
           <button className="empty-state-action" onClick={() => navigate("/")}>
-            Open Archive
+            {archiveUnavailable ? "Check Archive" : "Open Archive"}
           </button>
         </div>
       </div>

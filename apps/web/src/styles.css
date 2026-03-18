@@ -167,6 +167,15 @@ code { font-family: var(--mono); }
   overflow-x: hidden;
 }
 
+.app-shell-alert {
+  padding: 10px 22px;
+  border-bottom: 1px solid rgba(255, 77, 109, 0.28);
+  background: rgba(255, 77, 109, 0.12);
+  color: #ff92a6;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* ============================================================
    GENERIC PAGE SURFACES
    ============================================================ */
@@ -601,6 +610,20 @@ code { font-family: var(--mono); }
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 8px 14px;
+}
+
+.nav-empty--error {
+  color: #ffb2bf;
+}
+
+.nav-empty--error p + p {
+  margin-top: 6px;
+}
+
+.nav-empty--error code {
+  color: rgba(255, 255, 255, 0.82);
+  border-color: rgba(255, 77, 109, 0.25);
+  background: rgba(255, 77, 109, 0.12);
 }
 
 /* ──────────────────────────────────────────────────────────

@@ -30,9 +30,15 @@ export function DiagnosticsPage() {
 
   useEffect(() => {
     void refreshLiveStatus();
+    let cancelled = false;
+    let activeController: AbortController | null = null;
 
     function fetchBackendStatus() {
-      fetch(`${backendHttp}/api/replay/status`)
+      activeController?.abort();
+      const controller = new AbortController();
+      activeController = controller;
+
+      fetch(`${backendHttp}/api/replay/status`, { signal: controller.signal })
         .then(async (response) => {
           if (!response.ok) {
             throw new Error(`Replay status unavailable (${response.status})`);
@@ -40,10 +46,16 @@ export function DiagnosticsPage() {
           return response.json();
         })
         .then((data: ReplayBackendStatus) => {
+          if (cancelled) {
+            return;
+          }
           setReplayBackendStatus(data);
           setBackendStatusError(null);
         })
         .catch((err) => {
+          if (cancelled || controller.signal.aborted) {
+            return;
+          }
           setReplayBackendStatus(null);
           setBackendStatusError(err instanceof Error ? err.message : "Replay status request failed");
         });
@@ -52,6 +64,8 @@ export function DiagnosticsPage() {
     fetchBackendStatus();
     const id = window.setInterval(fetchBackendStatus, 3_000);
     return () => {
+      cancelled = true;
+      activeController?.abort();
       window.clearInterval(id);
     };
   }, [backendHttp, refreshLiveStatus]);

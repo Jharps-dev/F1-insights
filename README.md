@@ -44,6 +44,14 @@ pnpm dev:web
 # Starts on http://localhost:5173
 ```
 
+Or use the unified local dev launcher:
+
+```bash
+pnpm dev
+
+# Verifies or starts the API gateway first, then launches the web app
+```
+
 ### 5. Open Browser
 ```
 http://localhost:5173
@@ -121,6 +129,9 @@ pnpm dev:server
 
 # Start React dev server (http://localhost:5173)
 pnpm dev:web
+
+# Start local full-stack dev flow (auto-starts/verifies API first)
+pnpm dev
 
 # Fetch OpenF1 session data
 pnpm import:openf1 -- --session <sessionKey> --output <dir>

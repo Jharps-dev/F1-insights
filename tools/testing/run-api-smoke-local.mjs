@@ -1,17 +1,33 @@
+import fs from "node:fs";
 import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, "../..");
 
 const HTTP_BASE = process.env.SMOKE_HTTP_BASE || "http://localhost:3000";
 const HEALTH_PATH = process.env.SMOKE_HEALTH_PATH || "/health";
-const SERVER_START_TIMEOUT_MS = Number(process.env.SMOKE_SERVER_START_TIMEOUT_MS || 60000);
-const HEALTH_POLL_MS = Number(process.env.SMOKE_HEALTH_POLL_MS || 500);
-const HEALTH_PROBE_TIMEOUT_MS = Number(process.env.SMOKE_HEALTH_PROBE_TIMEOUT_MS || 1500);
+const SERVER_START_TIMEOUT_MS = parsePositiveInt(process.env.SMOKE_SERVER_START_TIMEOUT_MS, 60000);
+const HEALTH_POLL_MS = parsePositiveInt(process.env.SMOKE_HEALTH_POLL_MS, 500);
+const HEALTH_PROBE_TIMEOUT_MS = parsePositiveInt(process.env.SMOKE_HEALTH_PROBE_TIMEOUT_MS, 1500);
+
+function parsePositiveInt(rawValue, fallback) {
+  const value = Number(rawValue);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.floor(value);
+}
 
 function isWindows() {
   return process.platform === "win32";
 }
 
 function pnpmCommand() {
-  return isWindows() ? "pnpm.cmd" : "pnpm";
+  const localPnpm = path.join(repoRoot, ".tools", "node", isWindows() ? "pnpm.cmd" : "pnpm");
+  return fs.existsSync(localPnpm) ? localPnpm : isWindows() ? "pnpm.cmd" : "pnpm";
 }
 
 function run(cmd, args, options = {}) {
@@ -38,16 +54,8 @@ async function waitForHealth() {
   const url = `${HTTP_BASE}${HEALTH_PATH}`;
 
   while (Date.now() - start < SERVER_START_TIMEOUT_MS) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) {
-        const body = await response.json().catch(() => null);
-        if (!body || body.status === "ok") {
-          return;
-        }
-      }
-    } catch {
-      // Keep polling until timeout while the server starts.
+    if (await isHealthyNow()) {
+      return;
     }
 
     await new Promise((resolve) => setTimeout(resolve, HEALTH_POLL_MS));
@@ -119,12 +127,20 @@ async function main() {
   );
 
   let serverExitedEarly = false;
+  let serverSpawnError = null;
   server.once("exit", () => {
     serverExitedEarly = true;
+  });
+  server.once("error", (err) => {
+    serverSpawnError = err;
   });
 
   try {
     await waitForHealth();
+
+    if (serverSpawnError) {
+      throw serverSpawnError;
+    }
 
     if (serverExitedEarly) {
       throw new Error("API gateway exited before smoke test could start");

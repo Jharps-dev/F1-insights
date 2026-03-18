@@ -7,7 +7,7 @@ function getNavClassName({ isActive }: { isActive: boolean }) {
 }
 
 export function AppShell() {
-  const { activeSession, connected, liveStatus } = useReplay();
+  const { activeSession, connected, liveStatus, sessionsError } = useReplay();
 
   return (
     <div className="app-shell">
@@ -51,6 +51,12 @@ export function AppShell() {
           )}
         </div>
       </header>
+
+      {sessionsError ? (
+        <div className="app-shell-alert" role="alert">
+          Archive/API connection issue: {sessionsError}
+        </div>
+      ) : null}
 
       <div className="app-shell-main">
         <Outlet />

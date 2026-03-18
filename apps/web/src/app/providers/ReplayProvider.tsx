@@ -136,7 +136,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
   }, [backendHttp]);
 
   const resetReplayState = useCallback(() => {
-    wsRef.current?.close();
+    wsRef.current?.close(1000, "reset");
     wsRef.current = null;
     setConnected(false);
     setIsPlaying(false);
@@ -202,7 +202,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
 
   const ensureSessionKey = useCallback(
     (sessionKey: number) => {
-      if (!Number.isFinite(sessionKey)) {
+      if (!Number.isInteger(sessionKey) || sessionKey <= 0) {
         return;
       }
       if (activeSession?.session_key === sessionKey) {
@@ -252,6 +252,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     }
 
     const ws = new WebSocket(backendWs);
+    let expectedClose = false;
     wsRef.current = ws;
     ws.onopen = () => {
       setConnected(true);
@@ -313,12 +314,13 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     ws.onclose = (event) => {
       setConnected(false);
       setIsPlaying(false);
-      if (event.code !== 1000) {
+      if (!expectedClose && event.code !== 1000) {
         setSessionError("WebSocket disconnected unexpectedly");
       }
     };
     return () => {
-      ws.close();
+      expectedClose = true;
+      ws.close(1000, "effect_cleanup");
       setConnected(false);
       setIsPlaying(false);
     };
@@ -337,29 +339,36 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     };
   }, [activeSession, refreshLiveStatus]);
 
-  const send = useCallback((message: object) => {
+  const send = useCallback((message: object): boolean => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(message));
+      return true;
     }
+    setSessionError("WebSocket not connected");
+    return false;
   }, []);
 
   const play = useCallback(() => {
-    send({ op: "play" });
-    setIsPlaying(true);
-    setReplayStatus((previous) => ({ ...previous, paused: false }));
+    if (send({ op: "play" })) {
+      setIsPlaying(true);
+      setReplayStatus((previous) => ({ ...previous, paused: false }));
+    }
   }, [send]);
 
   const pause = useCallback(() => {
-    send({ op: "pause" });
-    setIsPlaying(false);
-    setReplayStatus((previous) => ({ ...previous, paused: true }));
+    if (send({ op: "pause" })) {
+      setIsPlaying(false);
+      setReplayStatus((previous) => ({ ...previous, paused: true }));
+    }
   }, [send]);
 
   const restart = useCallback(() => {
-    send({ op: "pause" });
-    send({ op: "seek", replayTimeMs: 0 });
-    setIsPlaying(false);
-    setReplayStatus((previous) => ({ ...previous, paused: true, currentReplayTimeMs: 0 }));
+    const paused = send({ op: "pause" });
+    const seeked = send({ op: "seek", replayTimeMs: 0 });
+    if (paused && seeked) {
+      setIsPlaying(false);
+      setReplayStatus((previous) => ({ ...previous, paused: true, currentReplayTimeMs: 0 }));
+    }
   }, [send]);
 
   const seekTo = useCallback(
@@ -380,8 +389,9 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
 
   const setSpeed = useCallback(
     (speed: number) => {
-      send({ op: "speed", speed });
-      setReplayStatus((previous) => ({ ...previous, speed }));
+      if (send({ op: "speed", speed })) {
+        setReplayStatus((previous) => ({ ...previous, speed }));
+      }
     },
     [send]
   );
