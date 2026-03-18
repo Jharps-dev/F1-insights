@@ -13,7 +13,7 @@
     "@f1-insights/replay-orchestrator": "workspace:*",
     "@f1-insights/replay-sdk": "workspace:*",
     "@f1-insights/schemas": "workspace:*",
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.3.1",
     "express": "^4.18.2",
     "ws": "^8.13.0"
   },
