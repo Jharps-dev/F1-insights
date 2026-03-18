@@ -7,6 +7,27 @@ interface ReplayBackendStatus {
   subscribers?: number;
 }
 
+async function getApiErrorMessage(response: Response, fallback: string): Promise<string> {
+  let body = "";
+  try {
+    body = await response.text();
+  } catch {
+    // Ignore body parse failures; the status fallback is enough.
+  }
+
+  const normalized = body.toLowerCase();
+  if (
+    response.status >= 500 &&
+    (normalized.includes("econnrefused") ||
+      normalized.includes("proxy error") ||
+      normalized.includes("error occurred while trying to proxy"))
+  ) {
+    return "Replay backend unavailable. Start ./.tools/node/pnpm.cmd dev or ./.tools/node/pnpm.cmd dev:server.";
+  }
+
+  return `${fallback} (${response.status})`;
+}
+
 function formatAge(timestamp?: string): string {
   if (!timestamp) {
     return "No timestamp";
@@ -41,7 +62,7 @@ export function DiagnosticsPage() {
       fetch(`${backendHttp}/api/replay/status`, { signal: controller.signal })
         .then(async (response) => {
           if (!response.ok) {
-            throw new Error(`Replay status unavailable (${response.status})`);
+            throw new Error(await getApiErrorMessage(response, "Replay status unavailable"));
           }
           return response.json();
         })

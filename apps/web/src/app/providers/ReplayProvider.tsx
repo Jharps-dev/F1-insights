@@ -1,5 +1,6 @@
 ﻿import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type {
+  DriverLocation,
   InsightCard,
   LayoutPoint,
   LiveStatus,
@@ -26,6 +27,7 @@ interface ReplayContextValue {
   liveError: string | null;
   lastStateUpdateAt: number | null;
   tower: TowerState | null;
+  locations: DriverLocation[];
   stints: StintState[];
   insights: InsightCard[];
   raceControl: RaceControlMessage[];
@@ -49,6 +51,27 @@ interface ReplayContextValue {
 }
 
 const ReplayContext = createContext<ReplayContextValue | null>(null);
+
+async function getApiErrorMessage(response: Response, fallback: string): Promise<string> {
+  let body = "";
+  try {
+    body = await response.text();
+  } catch {
+    // Ignore body parse failures; the status fallback is enough.
+  }
+
+  const normalized = body.toLowerCase();
+  if (
+    response.status >= 500 &&
+    (normalized.includes("econnrefused") ||
+      normalized.includes("proxy error") ||
+      normalized.includes("error occurred while trying to proxy"))
+  ) {
+    return "API gateway unavailable. Start ./.tools/node/pnpm.cmd dev or ./.tools/node/pnpm.cmd dev:server.";
+  }
+
+  return `${fallback} (${response.status})`;
+}
 
 function getBackendBase(): { http: string; ws: string } {
   const env = import.meta.env as Record<string, string | undefined>;
@@ -82,6 +105,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     currentReplayTimeMs: 0,
   });
   const [tower, setTower] = useState<TowerState | null>(null);
+  const [locations, setLocations] = useState<DriverLocation[]>([]);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [lastStateUpdateAt, setLastStateUpdateAt] = useState<number | null>(null);
   const [stints, setStints] = useState<StintState[]>([]);
@@ -103,7 +127,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     fetch(`${backendHttp}/api/sessions`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
-          throw new Error(`Failed to load sessions (${response.status})`);
+          throw new Error(await getApiErrorMessage(response, "Failed to load sessions"));
         }
         return response.json();
       })
@@ -124,7 +148,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch(`${backendHttp}/api/live/status`);
       if (!response.ok) {
-        setLiveError(`Live status unavailable (${response.status})`);
+        setLiveError(await getApiErrorMessage(response, "Live status unavailable"));
         return;
       }
       const status = (await response.json()) as LiveStatus;
@@ -141,6 +165,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     setConnected(false);
     setIsPlaying(false);
     setTower(null);
+    setLocations([]);
     setSessionError(null);
     setLastStateUpdateAt(null);
     setStints([]);
@@ -287,6 +312,9 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
           if (message.payload?.tower) {
             setTower(message.payload.tower);
           }
+          if (Array.isArray(message.payload?.locations)) {
+            setLocations(message.payload.locations);
+          }
           if (Array.isArray(message.payload?.stints)) {
             setStints(message.payload.stints);
           }
@@ -408,7 +436,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ sessionKey: activeSession.session_key }),
       });
       if (!response.ok) {
-        setLiveError(`Failed to start live mode (${response.status})`);
+        setLiveError(await getApiErrorMessage(response, "Failed to start live mode"));
       } else {
         setLiveError(null);
       }
@@ -425,7 +453,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch(`${backendHttp}/api/live/stop`, { method: "POST" });
       if (!response.ok) {
-        setLiveError(`Failed to stop live mode (${response.status})`);
+        setLiveError(await getApiErrorMessage(response, "Failed to stop live mode"));
       } else {
         setLiveError(null);
       }
@@ -455,6 +483,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
         liveError,
         lastStateUpdateAt,
         tower,
+        locations,
         stints,
         insights,
         raceControl,

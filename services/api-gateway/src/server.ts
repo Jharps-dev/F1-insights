@@ -9,7 +9,7 @@ import { config as loadEnv } from "dotenv";
 import { ReplayService } from "@f1-insights/replay-orchestrator";
 import { CanonicalEvent } from "@f1-insights/schemas";
 import { OpenF1LiveIngest } from "@f1-insights/ingest-openf1";
-import { importOpenF1Session, type ImportProfile } from "@f1-insights/ingest-openf1";
+import { backfillOpenF1Manifests, importOpenF1Session, type ImportProfile } from "@f1-insights/ingest-openf1";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -400,6 +400,25 @@ app.post("/api/sessions/:key/import", async (req, res) => {
       error: err instanceof Error ? err.message : "Failed to import session",
       sessionKey,
       profile,
+    });
+  }
+});
+
+app.post("/api/sessions/backfill-manifests", async (req, res) => {
+  const rawSessionKeys = Array.isArray(req.body?.sessionKeys) ? req.body.sessionKeys : undefined;
+  const sessionKeys = rawSessionKeys
+    ?.map((value: unknown) => Number(value))
+    .filter((value: number) => Number.isInteger(value) && value > 0);
+
+  try {
+    const result = await backfillOpenF1Manifests(dataDir, {
+      force: req.body?.force === true,
+      sessionKeys: sessionKeys && sessionKeys.length > 0 ? sessionKeys : undefined,
+    });
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    return res.status(500).json({
+      error: err instanceof Error ? err.message : "Failed to backfill manifests",
     });
   }
 });

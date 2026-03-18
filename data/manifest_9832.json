@@ -11,60 +11,101 @@
   "session_key": 9832,
   "session_type": "Practice",
   "circuit_short_name": "Yas Marina Circuit",
+  "meeting_context": {
+    "meeting_official_name": "FORMULA 1 ETIHAD AIRWAYS ABU DHABI GRAND PRIX 2025",
+    "location": "Yas Island",
+    "country_code": "UAE",
+    "country_name": "United Arab Emirates",
+    "country_flag": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Flags%2016x9/united-arab-emirates-flag.png",
+    "circuit_type": "Permanent",
+    "circuit_info_url": "https://api.multiviewer.app/api/v1/circuits/70/2025",
+    "circuit_image": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Track%20icons%204x3/Abu Dhabi%20carbon.png"
+  },
   "drivers": [
     {
       "number": 1,
       "code": "VER",
       "name": "Max VERSTAPPEN",
+      "broadcast_name": "M VERSTAPPEN",
+      "first_name": "Max",
+      "last_name": "Verstappen",
       "team": "Red Bull Racing",
-      "team_color": "4781D7"
+      "team_color": "4781D7",
+      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/M/MAXVER01_Max_Verstappen/maxver01.png.transform/1col/image.png"
     },
     {
       "number": 4,
       "code": "NOR",
       "name": "Lando NORRIS",
+      "broadcast_name": "L NORRIS",
+      "first_name": "Lando",
+      "last_name": "Norris",
       "team": "McLaren",
-      "team_color": "F47600"
+      "team_color": "F47600",
+      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/L/LANNOR01_Lando_Norris/lannor01.png.transform/1col/image.png"
     },
     {
       "number": 5,
       "code": "BOR",
       "name": "Gabriel BORTOLETO",
+      "broadcast_name": "G BORTOLETO",
+      "first_name": "Gabriel",
+      "last_name": "Bortoleto",
       "team": "Kick Sauber",
-      "team_color": "01C00E"
+      "team_color": "01C00E",
+      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/G/GABBOR01_Gabriel_Bortoleto/gabbor01.png.transform/1col/image.png"
     },
     {
       "number": 6,
       "code": "HAD",
       "name": "Isack HADJAR",
+      "broadcast_name": "I HADJAR",
+      "first_name": "Isack",
+      "last_name": "Hadjar",
       "team": "Racing Bulls",
-      "team_color": "6C98FF"
+      "team_color": "6C98FF",
+      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/I/ISAHAD01_Isack_Hadjar/isahad01.png.transform/1col/image.png"
     },
     {
       "number": 12,
       "code": "ANT",
       "name": "Kimi ANTONELLI",
+      "broadcast_name": "K ANTONELLI",
+      "first_name": "Kimi",
+      "last_name": "Antonelli",
       "team": "Mercedes",
-      "team_color": "00D7B6"
+      "team_color": "00D7B6",
+      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/A/ANDANT01_Andrea%20Kimi_Antonelli/andant01.png.transform/1col/image.png"
     },
     {
       "number": 16,
       "code": "LEC",
       "name": "Charles LECLERC",
+      "broadcast_name": "C LECLERC",
+      "first_name": "Charles",
+      "last_name": "Leclerc",
       "team": "Ferrari",
-      "team_color": "ED1131"
+      "team_color": "ED1131",
+      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/C/CHALEC01_Charles_Leclerc/chalec01.png.transform/1col/image.png"
     },
     {
       "number": 27,
       "code": "HUL",
       "name": "Nico HULKENBERG",
+      "broadcast_name": "N HULKENBERG",
+      "first_name": "Nico",
+      "last_name": "Hulkenberg",
       "team": "Kick Sauber",
-      "team_color": "01C00E"
+      "team_color": "01C00E",
+      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/N/NICHUL01_Nico_Hulkenberg/nichul01.png.transform/1col/image.png"
     },
     {
       "number": 34,
       "code": "SHI",
       "name": "Cian SHIELDS",
+      "broadcast_name": "C SHIELDS",
+      "first_name": "Cian",
+      "last_name": "Shields",
       "team": "Aston Martin",
       "team_color": "229971"
     },
@@ -72,6 +113,9 @@
       "number": 35,
       "code": "CRA",
       "name": "Jak CRAWFORD",
+      "broadcast_name": "J CRAWFORD",
+      "first_name": "Jak",
+      "last_name": "Crawford",
       "team": "Aston Martin",
       "team_color": "229971"
     },
@@ -79,6 +123,9 @@
       "number": 36,
       "code": "LIN",
       "name": "Arvid LINDBLAD",
+      "broadcast_name": "A LINDBLAD",
+      "first_name": "Arvid",
+      "last_name": "Lindblad",
       "team": "Red Bull Racing",
       "team_color": "4781D7"
     },
@@ -86,6 +133,9 @@
       "number": 39,
       "code": "LEL",
       "name": "Arthur LECLERC",
+      "broadcast_name": "A LECLERC",
+      "first_name": "Arthur",
+      "last_name": "Leclerc",
       "team": "Ferrari",
       "team_color": "ED1131"
     },
@@ -93,6 +143,9 @@
       "number": 40,
       "code": "IWA",
       "name": "Ayumu IWASA",
+      "broadcast_name": "A IWASA",
+      "first_name": "Ayumu",
+      "last_name": "Iwasa",
       "team": "Racing Bulls",
       "team_color": "6C98FF"
     },
@@ -100,6 +153,9 @@
       "number": 43,
       "code": "COL",
       "name": "Franco COLAPINTO",
+      "broadcast_name": "F COLAPINTO",
+      "first_name": "Franco",
+      "last_name": "Colapinto",
       "team": "Alpine",
       "team_color": "00A1E8"
     },
@@ -107,6 +163,9 @@
       "number": 46,
       "code": "BRO",
       "name": "Luke BROWNING",
+      "broadcast_name": "L BROWNING",
+      "first_name": "Luke",
+      "last_name": "Browning",
       "team": "Williams",
       "team_color": "1868DB"
     },
@@ -114,6 +173,9 @@
       "number": 50,
       "code": "HIR",
       "name": "Ryo HIRAKAWA",
+      "broadcast_name": "R HIRAKAWA",
+      "first_name": "Ryo",
+      "last_name": "Hirakawa",
       "team": "Haas F1 Team",
       "team_color": "9C9FA2"
     },
@@ -121,13 +183,20 @@
       "number": 55,
       "code": "SAI",
       "name": "Carlos SAINZ",
+      "broadcast_name": "C SAINZ",
+      "first_name": "Carlos",
+      "last_name": "Sainz",
       "team": "Williams",
-      "team_color": "1868DB"
+      "team_color": "1868DB",
+      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/C/CARSAI01_Carlos_Sainz/carsai01.png.transform/1col/image.png"
     },
     {
       "number": 61,
       "code": "ARO",
       "name": "Paul ARON",
+      "broadcast_name": "P ARON",
+      "first_name": "Paul",
+      "last_name": "Aron",
       "team": "Alpine",
       "team_color": "00A1E8"
     },
@@ -135,20 +204,31 @@
       "number": 63,
       "code": "RUS",
       "name": "George RUSSELL",
+      "broadcast_name": "G RUSSELL",
+      "first_name": "George",
+      "last_name": "Russell",
       "team": "Mercedes",
-      "team_color": "00D7B6"
+      "team_color": "00D7B6",
+      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/G/GEORUS01_George_Russell/georus01.png.transform/1col/image.png"
     },
     {
       "number": 87,
       "code": "BEA",
       "name": "Oliver BEARMAN",
+      "broadcast_name": "O BEARMAN",
+      "first_name": "Oliver",
+      "last_name": "Bearman",
       "team": "Haas F1 Team",
-      "team_color": "9C9FA2"
+      "team_color": "9C9FA2",
+      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/O/OLIBEA01_Oliver_Bearman/olibea01.png.transform/1col/image.png"
     },
     {
       "number": 89,
       "code": "OWA",
       "name": "Patricio O'WARD",
+      "broadcast_name": "P O'WARD",
+      "first_name": "Patricio",
+      "last_name": "O'Ward",
       "team": "McLaren",
       "team_color": "F47600"
     }

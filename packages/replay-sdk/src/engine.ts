@@ -6,7 +6,7 @@
  */
 
 import crypto from "crypto";
-import { CanonicalEvent, InsightCard, StintState, TowerState, StateStreamMessage } from "@f1-insights/schemas";
+import { CanonicalEvent, DriverLocationState, InsightCard, StintState, TowerState, StateStreamMessage } from "@f1-insights/schemas";
 
 /**
  * Replay Clock: maps wall-clock to replay-time
@@ -286,6 +286,23 @@ export class StateBuilder {
         break;
       }
 
+      case "location": {
+        if (!driverNumber) break;
+        const payload = event.payload as any;
+        if (!Number.isFinite(payload.x) || !Number.isFinite(payload.y)) {
+          break;
+        }
+
+        const state = this.getOrCreateDriver(driverNumber);
+        state.latestLocation = {
+          x: payload.x,
+          y: payload.y,
+          z: Number.isFinite(payload.z) ? payload.z : undefined,
+          time_utc: event.event_time_utc || "",
+        };
+        break;
+      }
+
       case "position": {
         if (!driverNumber) break;
         const payload = event.payload as any;
@@ -365,6 +382,22 @@ export class StateBuilder {
    */
   getRaceControlMessages() {
     return this.raceControlMessages;
+  }
+
+  buildDriverLocations(): DriverLocationState[] {
+    return Array.from(this.driverStates.values())
+      .filter((driver): driver is DriverState & { latestLocation: NonNullable<DriverState["latestLocation"]> } => Boolean(driver.latestLocation))
+      .sort((a, b) => a.position - b.position)
+      .map((driver) => ({
+        driver_number: driver.number,
+        code: driver.code,
+        x: driver.latestLocation.x,
+        y: driver.latestLocation.y,
+        z: driver.latestLocation.z,
+        time_utc: driver.latestLocation.time_utc,
+        position: Number.isFinite(driver.position) ? driver.position : undefined,
+        team_color: driver.teamColor,
+      }));
   }
 
   buildStintStates(): StintState[] {
@@ -650,6 +683,7 @@ interface DriverState {
   pitCount: number;
   lapHistory: LapHistoryEntry[];
   lastTelemetry?: { speed: number; throttle: number; brake: number; laptop_number?: number; time_ms: number };
+  latestLocation?: { x: number; y: number; z?: number; time_utc: string };
   finalPosition?: number;
   points?: number;
 }

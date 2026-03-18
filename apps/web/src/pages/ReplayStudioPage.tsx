@@ -38,6 +38,7 @@ export function ReplayStudioPage() {
     layout,
     layoutLoading,
     tower,
+    locations,
     raceControl,
     selectedDriver,
     setSelectedDriver,
@@ -263,7 +264,9 @@ export function ReplayStudioPage() {
             layout={layout}
             layoutLoading={layoutLoading}
             tower={tower}
+            locations={locations}
             replayTimeMs={replayStatus.currentReplayTimeMs}
+            fallbackSeed={activeSession.circuit_short_name || String(activeSession.session_key)}
           />
         </section>
         <div

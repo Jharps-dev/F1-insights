@@ -6,7 +6,7 @@
 
 import fs from "fs/promises";
 import path from "path";
-import { importOpenF1Session, listOpenF1Sessions, type ImportProfile } from "./importer";
+import { backfillOpenF1Manifests, importOpenF1Session, listOpenF1Sessions, type ImportProfile } from "./importer";
 
 function getArgValue(args: string[], key: string): string | undefined {
   const idx = args.indexOf(key);
@@ -53,17 +53,30 @@ async function main() {
   const outputDir = getArgValue(args, "--output") || "./data";
   const profile = parseProfile(getArgValue(args, "--profile"));
   const typesRaw = getArgValue(args, "--types") || "Practice,Qualifying,Race,Sprint";
+  const backfillManifests = args.includes("--backfill-manifests");
+  const force = args.includes("--force");
 
-  if (!sessionRaw && !yearRaw) {
+  if (!sessionRaw && !yearRaw && !backfillManifests) {
     console.error("Usage:");
     console.error("  npx tsx cli.ts --session <sessionKey> [--output <dir>] [--profile lite|standard|full]");
     console.error("  npx tsx cli.ts --year <year> [--types Race,Qualifying,Sprint] [--output <dir>] [--profile lite|standard|full]");
+    console.error("  npx tsx cli.ts --backfill-manifests [--output <dir>] [--force]");
     process.exit(1);
   }
 
   try {
     // Ensure output directory exists
     await fs.mkdir(outputDir, { recursive: true });
+
+    if (backfillManifests) {
+      const sessionKeys = sessionRaw ? [parseInt(sessionRaw, 10)] : undefined;
+      const result = await backfillOpenF1Manifests(outputDir, { force, sessionKeys });
+      console.log(`\n✓ Manifest backfill complete`);
+      console.log(`  Updated: ${result.updated}`);
+      console.log(`  Skipped: ${result.skipped}`);
+      console.log(`  Failed: ${result.failed}`);
+      return;
+    }
 
     if (sessionRaw) {
       const sessionKey = parseInt(sessionRaw, 10);

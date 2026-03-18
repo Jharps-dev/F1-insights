@@ -27,10 +27,11 @@ export interface LiveIngestStatus {
   lastError?: string;
 }
 
-type TopicKind = "car_data" | "lap" | "position" | "weather" | "race_control";
+type TopicKind = "car_data" | "location" | "lap" | "position" | "weather" | "race_control";
 
 const TOPICS: Array<{ topic: string; kind: TopicKind }> = [
   { topic: "v1/car_data", kind: "car_data" },
+  { topic: "v1/location", kind: "location" },
   { topic: "v1/laps", kind: "lap" },
   { topic: "v1/position", kind: "position" },
   { topic: "v1/weather", kind: "weather" },
@@ -202,6 +203,17 @@ export class OpenF1LiveIngest extends EventEmitter {
             n_gear: this.toNumber(row.n_gear) ?? 0,
             drs: (this.toNumber(row.drs) ?? 0) > 0,
             lap_number: this.toNumber(row.lap_number) ?? undefined,
+          },
+        };
+      case "location":
+        return {
+          ...base,
+          kind,
+          payload: {
+            x: this.toNumber(row.x) ?? 0,
+            y: this.toNumber(row.y) ?? 0,
+            z: this.toNumber(row.z) ?? undefined,
+            session_time: this.toNumber(row.session_time) ?? undefined,
           },
         };
       case "lap":

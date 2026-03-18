@@ -21,30 +21,285 @@ export type ImportProfile = "lite" | "standard" | "full";
 interface ImportProfileSettings {
   includeCarData: boolean;
   carDataKeepEvery: number;
+  includeLocation: boolean;
+  locationKeepEvery: number;
   includeWeather: boolean;
   includeRaceControl: boolean;
+  includePit: boolean;
+  includeTeamRadio: boolean;
+  includeResult: boolean;
 }
 
 const IMPORT_PROFILES: Record<ImportProfile, ImportProfileSettings> = {
   lite: {
     includeCarData: false,
     carDataKeepEvery: 1,
+    includeLocation: false,
+    locationKeepEvery: 1,
     includeWeather: true,
     includeRaceControl: true,
+    includePit: true,
+    includeTeamRadio: true,
+    includeResult: true,
   },
   standard: {
     includeCarData: true,
     carDataKeepEvery: 5,
+    includeLocation: true,
+    locationKeepEvery: 3,
     includeWeather: true,
     includeRaceControl: true,
+    includePit: true,
+    includeTeamRadio: true,
+    includeResult: true,
   },
   full: {
     includeCarData: true,
     carDataKeepEvery: 1,
+    includeLocation: true,
+    locationKeepEvery: 1,
     includeWeather: true,
     includeRaceControl: true,
+    includePit: true,
+    includeTeamRadio: true,
+    includeResult: true,
   },
 };
+
+function toOptionalNumber(value: unknown): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeTyreCompound(value: unknown): "S" | "M" | "H" | "I" | "W" | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  if (normalized.startsWith("SOFT")) return "S";
+  if (normalized.startsWith("MED")) return "M";
+  if (normalized.startsWith("HARD")) return "H";
+  if (normalized.startsWith("INT")) return "I";
+  if (normalized.startsWith("WET")) return "W";
+  if (normalized === "S" || normalized === "M" || normalized === "H" || normalized === "I" || normalized === "W") {
+    return normalized;
+  }
+
+  return undefined;
+}
+
+function mapResultStatus(row: Record<string, unknown>): "finished" | "dnf" | "dns" | "disqualified" {
+  if (row.dsq === true) {
+    return "disqualified";
+  }
+  if (row.dns === true) {
+    return "dns";
+  }
+  if (row.dnf === true) {
+    return "dnf";
+  }
+  return "finished";
+}
+
+function formatResultTime(row: Record<string, unknown>): string | undefined {
+  const gapToLeader = toOptionalNumber(row.gap_to_leader);
+  if (typeof gapToLeader === "number") {
+    if (gapToLeader === 0) {
+      return "Leader";
+    }
+    return `+${gapToLeader.toFixed(3)}s`;
+  }
+
+  const duration = toOptionalNumber(row.duration);
+  if (typeof duration === "number") {
+    return `${duration.toFixed(3)}s`;
+  }
+
+  return undefined;
+}
+
+function formatGridLapTime(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  const parsed = toOptionalNumber(value);
+  if (typeof parsed !== "number") {
+    return undefined;
+  }
+
+  if (parsed >= 60) {
+    const minutes = Math.floor(parsed / 60);
+    const seconds = (parsed % 60).toFixed(3).padStart(6, "0");
+    return `${minutes}:${seconds}`;
+  }
+
+  return parsed.toFixed(3);
+}
+
+function buildMeetingContext(meetingData: any): SessionManifest["meeting_context"] | undefined {
+  if (!meetingData) {
+    return undefined;
+  }
+
+  return {
+    meeting_official_name:
+      typeof meetingData.meeting_official_name === "string" ? meetingData.meeting_official_name : undefined,
+    location: typeof meetingData.location === "string" ? meetingData.location : undefined,
+    country_code: typeof meetingData.country_code === "string" ? meetingData.country_code : undefined,
+    country_name: typeof meetingData.country_name === "string" ? meetingData.country_name : undefined,
+    country_flag: typeof meetingData.country_flag === "string" ? meetingData.country_flag : undefined,
+    circuit_type: typeof meetingData.circuit_type === "string" ? meetingData.circuit_type : undefined,
+    circuit_info_url: typeof meetingData.circuit_info_url === "string" ? meetingData.circuit_info_url : undefined,
+    circuit_image: typeof meetingData.circuit_image === "string" ? meetingData.circuit_image : undefined,
+  };
+}
+
+function buildStartingGrid(
+  rows: any[],
+  drivers: Map<number, SessionManifest["drivers"][number]>
+): NonNullable<SessionManifest["starting_grid"]> {
+  return rows
+    .map((row) => {
+      const driverNumber = Number(row.driver_number);
+      const position = Number(row.position);
+      if (!Number.isFinite(driverNumber) || !Number.isFinite(position)) {
+        return null;
+      }
+
+      const driverMeta = drivers.get(driverNumber);
+      return {
+        position,
+        driver_number: driverNumber,
+        driver_code:
+          typeof row.driver_code === "string"
+            ? row.driver_code
+            : typeof row.name_acronym === "string"
+              ? row.name_acronym
+              : driverMeta?.code,
+        driver_name:
+          typeof row.full_name === "string"
+            ? row.full_name
+            : typeof row.broadcast_name === "string"
+              ? row.broadcast_name
+              : driverMeta?.name,
+        team_name: typeof row.team_name === "string" ? row.team_name : driverMeta?.team,
+        team_color: typeof row.team_colour === "string" ? row.team_colour : driverMeta?.team_color,
+        grid_time: formatGridLapTime(row.lap_time ?? row.time ?? row.time_q1 ?? row.time_q2 ?? row.time_q3),
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .sort((a, b) => a.position - b.position);
+}
+
+interface SessionMetadataBundle {
+  sessionData: any;
+  meetingKey: number;
+  meetingData?: any;
+  drivers: Map<number, SessionManifest["drivers"][number]>;
+  startingGrid: NonNullable<SessionManifest["starting_grid"]>;
+}
+
+async function fetchSessionMetadata(sessionKey: number): Promise<SessionMetadataBundle> {
+  const sessionsUrl = `${BASE_URL}/sessions?session_key=${sessionKey}`;
+  const sessionsList: any[] = await fetchCached(sessionsUrl);
+  const sessionData = sessionsList[0];
+
+  if (!sessionData) {
+    throw new Error(`Session ${sessionKey} not found`);
+  }
+
+  const meetingKey = Number(sessionData.meeting_key);
+  const drivers = new Map<number, SessionManifest["drivers"][number]>();
+
+  console.log(`  Meeting: #${meetingKey}, Session: ${sessionData.session_name}, Date: ${sessionData.date_start || "unknown"}`);
+
+  console.log(`  → Fetching meeting metadata...`);
+  const meetingsUrl = `${BASE_URL}/meetings?meeting_key=${meetingKey}`;
+  const meetingRows: any[] = await fetchOptionalArray(meetingsUrl, "meetings");
+  const meetingData = meetingRows[0];
+
+  console.log(`  → Fetching drivers metadata...`);
+  const driversUrl = `${BASE_URL}/drivers?session_key=${sessionKey}`;
+  const sessionDrivers: any[] = await fetchOptionalArray(driversUrl, "drivers");
+  for (const row of sessionDrivers) {
+    const driverNumber = Number(row.driver_number);
+    if (Number.isFinite(driverNumber)) {
+      drivers.set(driverNumber, {
+        number: driverNumber,
+        code: row.name_acronym || row.driver_code || `D${driverNumber}`,
+        name: typeof row.full_name === "string" ? row.full_name : undefined,
+        broadcast_name: typeof row.broadcast_name === "string" ? row.broadcast_name : undefined,
+        first_name: typeof row.first_name === "string" ? row.first_name : undefined,
+        last_name: typeof row.last_name === "string" ? row.last_name : undefined,
+        team: typeof row.team_name === "string" ? row.team_name : undefined,
+        team_color: typeof row.team_colour === "string" ? row.team_colour : undefined,
+        headshot_url: typeof row.headshot_url === "string" ? row.headshot_url : undefined,
+        country_code: typeof row.country_code === "string" ? row.country_code : undefined,
+      });
+    }
+  }
+
+  console.log(`  → Fetching starting grid...`);
+  const startingGridUrl = `${BASE_URL}/starting_grid?session_key=${sessionKey}`;
+  const startingGridRows: any[] = await fetchOptionalArray(startingGridUrl, "starting_grid");
+
+  return {
+    sessionData,
+    meetingKey,
+    meetingData,
+    drivers,
+    startingGrid: buildStartingGrid(startingGridRows, drivers),
+  };
+}
+
+function buildSessionManifest(args: {
+  sessionKey: number;
+  profile?: ImportProfile;
+  sessionData: any;
+  meetingKey: number;
+  meetingData?: any;
+  drivers: Map<number, SessionManifest["drivers"][number]>;
+  startingGrid: NonNullable<SessionManifest["starting_grid"]>;
+  existingManifest?: Partial<SessionManifest>;
+}): SessionManifest {
+  const {
+    sessionKey,
+    profile,
+    sessionData,
+    meetingKey,
+    meetingData,
+    drivers,
+    startingGrid,
+    existingManifest,
+  } = args;
+
+  return {
+    schema_version: CANONICAL_SCHEMA_VERSION,
+    dataset_name: existingManifest?.dataset_name || `openf1_session_${sessionKey}`,
+    created_utc: existingManifest?.created_utc || new Date().toISOString(),
+    year: sessionData.year ?? existingManifest?.year,
+    meeting_name: sessionData.meeting_name ?? existingManifest?.meeting_name,
+    session_name: sessionData.session_name ?? existingManifest?.session_name,
+    date_start_utc: sessionData.date_start ?? existingManifest?.date_start_utc,
+    date_end_utc: sessionData.date_end ?? existingManifest?.date_end_utc,
+    import_profile: profile ?? existingManifest?.import_profile,
+    meeting_key: meetingKey,
+    session_key: sessionKey,
+    session_type: sessionData.session_type || existingManifest?.session_type || ("practice" as const),
+    circuit_short_name: sessionData.circuit_short_name || existingManifest?.circuit_short_name,
+    meeting_context: buildMeetingContext(meetingData) || existingManifest?.meeting_context,
+    starting_grid: startingGrid.length > 0 ? startingGrid : existingManifest?.starting_grid,
+    drivers: Array.from(drivers.values()),
+    source_priority: existingManifest?.source_priority || ["openf1"],
+    time_basis: existingManifest?.time_basis || "utc",
+    files: existingManifest?.files || {
+      events_jsonl: `events_${sessionKey}.jsonl`,
+      manifest_json: `manifest_${sessionKey}.json`,
+    },
+  };
+}
 
 /**
  * Fetch with retry, backoff, and rate limiting
@@ -155,35 +410,13 @@ export async function importOpenF1Session(
   console.log(`  Profile: ${profile}`);
 
   const events: CanonicalEvent[] = [];
-  const drivers = new Map<number, { number: number; code: string; name?: string; team?: string; team_color?: string }>();
+  const drivers = new Map<number, SessionManifest["drivers"][number]>();
 
   try {
-    // Fetch sessions to find meeting/circuit context
-    const sessionsUrl = `${BASE_URL}/sessions?session_key=${sessionKey}`;
-    const sessionsList: any[] = await (options.cacheOnly ? [] : fetchCached(sessionsUrl));
-    const sessionData = sessionsList[0];
-
-    if (!sessionData) {
-      throw new Error(`Session ${sessionKey} not found`);
-    }
-
-    const meetingKey = sessionData.meeting_key;
-    console.log(`  Meeting: #${meetingKey}, Session: ${sessionData.session_name}, Date: ${sessionData.date_start || "unknown"}`);
-
-    // Fetch drivers metadata early so we still have driver cards if telemetry endpoint is unavailable
-    console.log(`  → Fetching drivers metadata...`);
-    const driversUrl = `${BASE_URL}/drivers?session_key=${sessionKey}`;
-    const sessionDrivers: any[] = await fetchOptionalArray(driversUrl, "drivers");
-    for (const row of sessionDrivers) {
-      if (row.driver_number) {
-        drivers.set(row.driver_number, {
-          number: row.driver_number,
-          code: row.name_acronym || row.driver_code || `D${row.driver_number}`,
-          name: row.full_name,
-          team: row.team_name,
-          team_color: row.team_colour,
-        });
-      }
+    const { sessionData, meetingKey, meetingData, drivers: metadataDrivers, startingGrid } = await fetchSessionMetadata(sessionKey);
+    drivers.clear();
+    for (const [driverNumber, driver] of metadataDrivers.entries()) {
+      drivers.set(driverNumber, driver);
     }
 
     // Stints enrich lap tyre context and strategy metrics.
@@ -220,11 +453,9 @@ export async function importOpenF1Session(
         if (row.driver_number) {
           const prev = drivers.get(row.driver_number);
           drivers.set(row.driver_number, {
+            ...prev,
             number: row.driver_number,
             code: row.driver_code || prev?.code || `D${row.driver_number}`,
-            name: prev?.name,
-            team: prev?.team,
-            team_color: prev?.team_color,
           });
         }
 
@@ -254,6 +485,92 @@ export async function importOpenF1Session(
       }
     } else {
       console.log(`  → Skipping car_data for profile '${profile}'`);
+    }
+
+    if (profileSettings.includeLocation) {
+      console.log(`  → Fetching location (driver coordinates)...`);
+      const locationRows: any[] = [];
+      for (const driver of Array.from(drivers.keys())) {
+        const locationUrl = `${BASE_URL}/location?session_key=${sessionKey}&driver_number=${driver}`;
+        const driverLocations = await fetchOptionalArray(locationUrl, `location driver ${driver}`);
+        locationRows.push(...driverLocations);
+      }
+
+      const keepEvery = Math.max(1, profileSettings.locationKeepEvery);
+      for (let i = 0; i < locationRows.length; i++) {
+        if (i % keepEvery !== 0) {
+          continue;
+        }
+
+        const row = locationRows[i];
+        const driverNumber = Number(row.driver_number);
+        if (!Number.isFinite(driverNumber)) {
+          continue;
+        }
+
+        const prev = drivers.get(driverNumber);
+        const driverCode = row.driver_code || prev?.code || `D${driverNumber}`;
+        events.push({
+          schema_version: CANONICAL_SCHEMA_VERSION,
+          source: "openf1",
+          ingest_time_utc: new Date().toISOString(),
+          event_time_utc: row.date || new Date().toISOString(),
+          meeting_key: meetingKey,
+          session_key: sessionKey,
+          kind: "location",
+          driver: {
+            number: driverNumber,
+            code: driverCode,
+          },
+          payload: {
+            x: Number(row.x) || 0,
+            y: Number(row.y) || 0,
+            z: Number.isFinite(Number(row.z)) ? Number(row.z) : undefined,
+            session_time: Number.isFinite(Number(row.session_time)) ? Number(row.session_time) : undefined,
+          },
+        });
+      }
+    } else {
+      console.log(`  → Skipping location for profile '${profile}'`);
+    }
+
+    if (profileSettings.includePit) {
+      console.log(`  → Fetching pit stops...`);
+      const pitUrl = `${BASE_URL}/pit?session_key=${sessionKey}`;
+      const pitRows: any[] = await fetchOptionalArray(pitUrl, "pit");
+
+      for (const row of pitRows) {
+        const driverNumber = Number(row.driver_number);
+        if (!Number.isFinite(driverNumber)) {
+          continue;
+        }
+
+        const prev = drivers.get(driverNumber);
+        const pitLossSeconds =
+          toOptionalNumber(row.pit_duration) ??
+          toOptionalNumber(row.lane_duration) ??
+          toOptionalNumber(row.stop_duration);
+
+        events.push({
+          schema_version: CANONICAL_SCHEMA_VERSION,
+          source: "openf1",
+          ingest_time_utc: new Date().toISOString(),
+          event_time_utc: row.date || new Date().toISOString(),
+          meeting_key: meetingKey,
+          session_key: sessionKey,
+          kind: "pit",
+          driver: {
+            number: driverNumber,
+            code: prev?.code || `D${driverNumber}`,
+          },
+          payload: {
+            pit_entry_lap: Number(row.lap_number) || 0,
+            pit_exit_lap: undefined,
+            pit_loss_ms: typeof pitLossSeconds === "number" ? Math.round(pitLossSeconds * 1000) : undefined,
+            tyre_set_new: normalizeTyreCompound(row.compound),
+          },
+        });
+      }
     }
 
     // Fetch laps
@@ -376,39 +693,173 @@ export async function importOpenF1Session(
       }
     }
 
+    if (profileSettings.includeTeamRadio) {
+      console.log(`  → Fetching team_radio...`);
+      const teamRadioUrl = `${BASE_URL}/team_radio?session_key=${sessionKey}`;
+      const teamRadio: any[] = await fetchOptionalArray(teamRadioUrl, "team_radio");
+
+      for (const row of teamRadio) {
+        const driverNumber = Number(row.driver_number);
+        if (!Number.isFinite(driverNumber)) {
+          continue;
+        }
+
+        const prev = drivers.get(driverNumber);
+        events.push({
+          schema_version: CANONICAL_SCHEMA_VERSION,
+          source: "openf1",
+          ingest_time_utc: new Date().toISOString(),
+          event_time_utc: row.date || sessionData.date_end || sessionData.date_start || new Date().toISOString(),
+          meeting_key: meetingKey,
+          session_key: sessionKey,
+          kind: "radio",
+          driver: {
+            number: driverNumber,
+            code: prev?.code || `D${driverNumber}`,
+          },
+          payload: {
+            message: "Team radio available",
+            audio_url: typeof row.recording_url === "string" ? row.recording_url : undefined,
+          },
+        });
+      }
+    }
+
+    if (profileSettings.includeResult) {
+      console.log(`  → Fetching session_result...`);
+      const resultUrl = `${BASE_URL}/session_result?session_key=${sessionKey}`;
+      const results: any[] = await fetchOptionalArray(resultUrl, "session_result");
+
+      for (const row of results) {
+        const driverNumber = Number(row.driver_number);
+        if (!Number.isFinite(driverNumber)) {
+          continue;
+        }
+
+        const prev = drivers.get(driverNumber);
+        events.push({
+          schema_version: CANONICAL_SCHEMA_VERSION,
+          source: "openf1",
+          ingest_time_utc: new Date().toISOString(),
+          event_time_utc: sessionData.date_end || row.date || sessionData.date_start || new Date().toISOString(),
+          meeting_key: meetingKey,
+          session_key: sessionKey,
+          kind: "result",
+          driver: {
+            number: driverNumber,
+            code: prev?.code || `D${driverNumber}`,
+          },
+          payload: {
+            position: Number(row.position) || 0,
+            points: toOptionalNumber(row.points) ?? 0,
+            status: mapResultStatus(row),
+            grid_position: toOptionalNumber(row.grid_position),
+            laps_completed: toOptionalNumber(row.number_of_laps),
+            time_or_retired: formatResultTime(row),
+          },
+        });
+      }
+    }
+
     // Sort events by time (deterministic)
     events.sort((a, b) => (a.event_time_utc || "").localeCompare(b.event_time_utc || ""));
 
     console.log(`  ✓ Imported ${events.length} events from OpenF1`);
 
-    const manifest: SessionManifest = {
-      schema_version: CANONICAL_SCHEMA_VERSION,
-      dataset_name: `openf1_session_${sessionKey}`,
-      created_utc: new Date().toISOString(),
-      year: sessionData.year,
-      meeting_name: sessionData.meeting_name,
-      session_name: sessionData.session_name,
-      date_start_utc: sessionData.date_start,
-      date_end_utc: sessionData.date_end,
-      import_profile: profile,
-      meeting_key: meetingKey,
-      session_key: sessionKey,
-      session_type: sessionData.session_type || ("practice" as const),
-      circuit_short_name: sessionData.circuit_short_name,
-      drivers: Array.from(drivers.values()),
-      source_priority: ["openf1"],
-      time_basis: "utc",
-      files: {
-        events_jsonl: `events_${sessionKey}.jsonl`,
-        manifest_json: `manifest_${sessionKey}.json`,
-      },
-    };
+    const manifest = buildSessionManifest({
+      sessionKey,
+      profile,
+      sessionData,
+      meetingKey,
+      meetingData,
+      drivers,
+      startingGrid,
+    });
 
     return { events, manifest };
   } catch (err) {
     console.error(`[ERROR] Failed to import OpenF1 session: ${err}`);
     throw err;
   }
+}
+
+export async function backfillOpenF1Manifest(
+  manifestPath: string,
+  options: { force?: boolean } = {}
+): Promise<{ updated: boolean; sessionKey: number; manifest: SessionManifest }> {
+  const raw = await fs.readFile(manifestPath, "utf8");
+  const existingManifest = JSON.parse(raw) as SessionManifest;
+  const sessionKey = Number(existingManifest.session_key);
+
+  if (!Number.isInteger(sessionKey) || sessionKey <= 0) {
+    throw new Error(`Invalid manifest session key in ${manifestPath}`);
+  }
+
+  const needsMeetingContext = !existingManifest.meeting_context;
+  const needsDriverEnrichment = existingManifest.drivers.some(
+    (driver) => !driver.broadcast_name || !driver.headshot_url || !driver.country_code
+  );
+  const needsStartingGrid = !existingManifest.starting_grid || existingManifest.starting_grid.length === 0;
+
+  if (!options.force && !needsMeetingContext && !needsDriverEnrichment && !needsStartingGrid) {
+    return { updated: false, sessionKey, manifest: existingManifest };
+  }
+
+  console.log(`\n[BACKFILL] Manifest ${sessionKey}`);
+  const { sessionData, meetingKey, meetingData, drivers, startingGrid } = await fetchSessionMetadata(sessionKey);
+  const manifest = buildSessionManifest({
+    sessionKey,
+    sessionData,
+    meetingKey,
+    meetingData,
+    drivers,
+    startingGrid,
+    existingManifest,
+  });
+
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+  return { updated: true, sessionKey, manifest };
+}
+
+export async function backfillOpenF1Manifests(
+  outputDir: string,
+  options: { force?: boolean; sessionKeys?: number[] } = {}
+): Promise<{ updated: number; skipped: number; failed: number; sessionKeys: number[] }> {
+  const files = await fs.readdir(outputDir);
+  const sessionFilter = options.sessionKeys ? new Set(options.sessionKeys) : null;
+  const manifestFiles = files
+    .filter((fileName) => fileName.startsWith("manifest_") && fileName.endsWith(".json"))
+    .map((fileName) => path.join(outputDir, fileName))
+    .filter((filePath) => {
+      if (!sessionFilter) {
+        return true;
+      }
+      const matched = path.basename(filePath).match(/manifest_(\d+)\.json$/);
+      return matched ? sessionFilter.has(Number(matched[1])) : false;
+    })
+    .sort((a, b) => a.localeCompare(b));
+
+  let updated = 0;
+  let skipped = 0;
+  let failed = 0;
+  const touchedSessionKeys: number[] = [];
+
+  for (const manifestPath of manifestFiles) {
+    try {
+      const result = await backfillOpenF1Manifest(manifestPath, { force: options.force });
+      touchedSessionKeys.push(result.sessionKey);
+      if (result.updated) {
+        updated += 1;
+      } else {
+        skipped += 1;
+      }
+    } catch (err) {
+      failed += 1;
+      console.error(`[BACKFILL] Failed ${path.basename(manifestPath)}:`, err);
+    }
+  }
+
+  return { updated, skipped, failed, sessionKeys: touchedSessionKeys };
 }
 
 /**

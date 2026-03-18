@@ -1,5 +1,39 @@
 /** Shared TypeScript types for the F1 Insights web app. */
 
+export interface SessionMeetingContext {
+  meeting_official_name?: string;
+  location?: string;
+  country_code?: string;
+  country_name?: string;
+  country_flag?: string;
+  circuit_type?: string;
+  circuit_info_url?: string;
+  circuit_image?: string;
+}
+
+export interface SessionDriverManifest {
+  number: number;
+  code: string;
+  name?: string;
+  broadcast_name?: string;
+  first_name?: string;
+  last_name?: string;
+  team?: string;
+  team_color?: string;
+  headshot_url?: string;
+  country_code?: string;
+}
+
+export interface SessionStartingGridEntry {
+  position: number;
+  driver_number: number;
+  driver_code?: string;
+  driver_name?: string;
+  team_name?: string;
+  team_color?: string;
+  grid_time?: string;
+}
+
 export interface SessionManifest {
   schema_version: string;
   session_key: number;
@@ -7,12 +41,14 @@ export interface SessionManifest {
   session_type: string;
   session_name?: string;
   circuit_short_name: string;
+  meeting_context?: SessionMeetingContext;
+  starting_grid?: SessionStartingGridEntry[];
   year?: number;
   meeting_name?: string;
   date_start_utc?: string;
   date_end_utc?: string;
   import_profile?: "lite" | "standard" | "full";
-  drivers: Array<{ number: number; code: string; name?: string; team?: string; team_color?: string }>;
+  drivers: SessionDriverManifest[];
   created_utc?: string;
 }
 
@@ -87,6 +123,17 @@ export interface ReplayStatus {
 export interface LayoutPoint {
   x: number;
   y: number;
+}
+
+export interface DriverLocation {
+  driver_number: number;
+  code: string;
+  x: number;
+  y: number;
+  z?: number;
+  time_utc: string;
+  position?: number;
+  team_color?: string;
 }
 
 export interface LiveStatus {

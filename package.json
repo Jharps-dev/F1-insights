@@ -13,6 +13,7 @@
     "import:openf1": "tsx ./services/ingest-openf1/src/cli.ts",
     "import:openf1:lite": "tsx ./services/ingest-openf1/src/cli.ts --profile lite",
     "import:openf1:year": "tsx ./services/ingest-openf1/src/cli.ts --profile lite",
+    "import:openf1:backfill-manifests": "tsx ./services/ingest-openf1/src/cli.ts --backfill-manifests",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",

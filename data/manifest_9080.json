@@ -11,6 +11,16 @@
   "session_key": 9080,
   "session_type": "Practice",
   "circuit_short_name": "Imola",
+  "meeting_context": {
+    "meeting_official_name": "CALLED OFF: FORMULA 1 QATAR AIRWAYS GRAN PREMIO DEL MADE IN ITALY E DELL'EMILIA-ROMAGNA 2023",
+    "location": "Imola",
+    "country_code": "ITA",
+    "country_name": "Italy",
+    "country_flag": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Flags%2016x9/italy-flag.png",
+    "circuit_type": "Permanent",
+    "circuit_info_url": "https://api.multiviewer.app/api/v1/circuits/6/2023",
+    "circuit_image": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Track%20icons%204x3/Emilia-Romagna%20carbon.png"
+  },
   "drivers": [],
   "source_priority": [
     "openf1"

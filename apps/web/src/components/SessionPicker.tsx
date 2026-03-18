@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import type { LayoutPoint, SessionManifest } from "../types";
+import type {
+  LayoutPoint,
+  SessionDriverManifest,
+  SessionManifest,
+  SessionMeetingContext,
+  SessionStartingGridEntry,
+} from "../types";
+import { CircuitGraphic, buildCircuitGeometry, isUsableLayout } from "./CircuitGraphic";
 
 interface Props {
   sessions: SessionManifest[];
@@ -40,6 +47,116 @@ const CIRCUIT_META: Record<string, { flag: string; country: string }> = {
   "Abu Dhabi":   { flag: "🇦🇪", country: "UAE" },
   Bahrain:       { flag: "🇧🇭", country: "Bahrain" },
 };
+
+function getCircuitFallback(circuit: string) {
+  return CIRCUIT_META[circuit] ?? { flag: "🏎", country: circuit };
+}
+
+function getCircuitCountryLabel(context: SessionMeetingContext | undefined, circuit: string): string {
+  if (context?.location && context?.country_name && context.location !== context.country_name) {
+    return `${context.location}, ${context.country_name}`;
+  }
+  return context?.country_name || context?.location || getCircuitFallback(circuit).country;
+}
+
+function getCircuitDescriptor(context: SessionMeetingContext | undefined, fallback: string): string {
+  return context?.meeting_official_name || fallback;
+}
+
+function CircuitFlagMark({
+  context,
+  circuit,
+  variant,
+}: {
+  context?: SessionMeetingContext;
+  circuit: string;
+  variant: "card" | "hero";
+}) {
+  const fallback = getCircuitFallback(circuit);
+  const className = variant === "hero" ? "nav-circuit-hero-flag" : "nav-circuit-flag";
+
+  if (context?.country_flag) {
+    return (
+      <img
+        className={`${className} ${className}--image`}
+        src={context.country_flag}
+        alt={`${context.country_name || circuit} flag`}
+        loading="lazy"
+      />
+    );
+  }
+
+  return <div className={className}>{fallback.flag}</div>;
+}
+
+function DriverLineup({ drivers }: { drivers: SessionDriverManifest[] }) {
+  const featuredDrivers = drivers.slice(0, 5);
+  const remainingDrivers = Math.max(0, drivers.length - featuredDrivers.length);
+
+  if (featuredDrivers.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="nav-driver-lineup" aria-label={`Featured drivers: ${drivers.length}`}>
+      <div className="nav-driver-lineup-stack">
+        {featuredDrivers.map((driver) => {
+          const label = driver.broadcast_name || driver.code || String(driver.number);
+          return driver.headshot_url ? (
+            <img
+              key={driver.number}
+              className="nav-driver-avatar"
+              src={driver.headshot_url}
+              alt={driver.name || label}
+              title={driver.name || label}
+              loading="lazy"
+            />
+          ) : (
+            <div
+              key={driver.number}
+              className="nav-driver-avatar nav-driver-avatar--fallback"
+              title={driver.name || label}
+            >
+              {label.slice(0, 3)}
+            </div>
+          );
+        })}
+      </div>
+      <div className="nav-driver-lineup-copy">
+        <span className="nav-driver-lineup-label">Driver lineup</span>
+        <span className="nav-driver-lineup-value">
+          {drivers.length} drivers{remainingDrivers > 0 ? ` · +${remainingDrivers} more shown in replay` : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function getGridHeadline(startingGrid: SessionStartingGridEntry[] | undefined): string | null {
+  if (!startingGrid || startingGrid.length === 0) {
+    return null;
+  }
+
+  const topThree = startingGrid.slice(0, 3);
+  const labels = topThree.map((entry) => {
+    const code = entry.driver_code || entry.driver_name || `#${entry.driver_number}`;
+    return `P${entry.position} ${code}`;
+  });
+
+  return labels.join(" · ");
+}
+
+function getGridSubline(startingGrid: SessionStartingGridEntry[] | undefined): string | null {
+  if (!startingGrid || startingGrid.length < 2) {
+    return null;
+  }
+
+  const pole = startingGrid[0];
+  const frontRow = startingGrid[1];
+  const poleName = pole.driver_name || pole.driver_code || `#${pole.driver_number}`;
+  const frontRowName = frontRow.driver_name || frontRow.driver_code || `#${frontRow.driver_number}`;
+  return `Pole: ${poleName} · Front row: ${frontRowName}`;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,6 +231,8 @@ interface CircuitGroup {
   lastDate: number;
   gpName: string;
   hasSprint: boolean;
+  meetingContext?: SessionMeetingContext;
+  displayDrivers: SessionDriverManifest[];
 }
 
 interface SeasonGroup {
@@ -128,95 +247,6 @@ const layoutCache = new Map<number, LayoutPoint[] | null>();
 const PREVIEW_BACKEND_HTTP =
   (import.meta.env.VITE_BACKEND_ORIGIN as string | undefined) ||
   (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000");
-
-function sampleLayoutPoints(points: LayoutPoint[], targetPoints = 240): LayoutPoint[] {
-  if (!Array.isArray(points) || points.length === 0) {
-    return [];
-  }
-  const sampleStep = Math.max(1, Math.floor(points.length / targetPoints));
-  return points
-    .filter((_, i) => i % sampleStep === 0)
-    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
-}
-
-function isUsableLayout(points: LayoutPoint[]): boolean {
-  const sampled = sampleLayoutPoints(points, 320);
-  if (sampled.length < 20) {
-    return false;
-  }
-
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  for (const p of sampled) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  }
-
-  const spanX = Math.max(1, maxX - minX);
-  const spanY = Math.max(1, maxY - minY);
-  if (spanX < 80 || spanY < 80) {
-    return false;
-  }
-
-  const major = Math.max(spanX, spanY);
-  const minor = Math.max(1, Math.min(spanX, spanY));
-  if (major / minor > 12) {
-    return false;
-  }
-
-  let pathLength = 0;
-  const buckets = new Set<string>();
-  for (let i = 1; i < sampled.length; i += 1) {
-    const a = sampled[i - 1];
-    const b = sampled[i];
-    pathLength += Math.hypot(b.x - a.x, b.y - a.y);
-  }
-  for (const p of sampled) {
-    buckets.add(`${Math.round((p.x - minX) / 20)}:${Math.round((p.y - minY) / 20)}`);
-  }
-
-  return pathLength >= major * 4 && buckets.size >= 18;
-}
-
-function toMiniTrackPath(points: LayoutPoint[], width: number, height: number, pad: number): string {
-  if (points.length < 2) {
-    return "";
-  }
-
-  const sampled = sampleLayoutPoints(points, 240);
-  if (sampled.length < 2) {
-    return "";
-  }
-
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  for (const p of sampled) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  }
-
-  const spanX = Math.max(1, maxX - minX);
-  const spanY = Math.max(1, maxY - minY);
-  const scale = Math.min((width - pad * 2) / spanX, (height - pad * 2) / spanY);
-  const xOffset = (width - spanX * scale) / 2;
-  const yOffset = (height - spanY * scale) / 2;
-
-  return sampled
-    .map((p, i) => {
-      const x = xOffset + (p.x - minX) * scale;
-      const y = yOffset + (maxY - p.y) * scale;
-      return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-}
 
 function CircuitTrackPreview({ sessionKeys, title }: { sessionKeys: number[]; title: string }) {
   const [points, setPoints] = useState<LayoutPoint[] | null>(null);
@@ -292,25 +322,23 @@ function CircuitTrackPreview({ sessionKeys, title }: { sessionKeys: number[]; ti
     };
   }, [sessionKeys]);
 
-  const path = useMemo(() => {
-    if (!points || points.length < 2) {
-      return "";
-    }
-    return toMiniTrackPath(points, 168, 76, 8);
-  }, [points]);
+  const geometry = useMemo(
+    () => buildCircuitGeometry(points, { width: 168, height: 76, pad: 8, maxPoints: 240, fallbackSeed: title }),
+    [points, title],
+  );
 
   return (
-    <div className="nav-circuit-track" aria-hidden={loading || !path} title={title}>
-      <svg viewBox="0 0 168 76" preserveAspectRatio="xMidYMid meet">
-        {path ? (
-          <>
-            <path className="nav-circuit-track-glow" d={path} />
-            <path className="nav-circuit-track-line" d={path} />
-          </>
-        ) : (
-          <line className="nav-circuit-track-fallback" x1="16" y1="38" x2="152" y2="38" />
-        )}
-      </svg>
+    <div className="nav-circuit-track" title={title}>
+      <CircuitGraphic
+        geometry={geometry}
+        width={168}
+        height={76}
+        title={title}
+        className="nav-circuit-track-svg"
+        variant="card"
+        showCenterLine={false}
+      />
+      {loading && <span className="nav-circuit-track-status">Syncing layout</span>}
     </div>
   );
 }
@@ -336,6 +364,9 @@ function buildSeasonGroups(sessions: SessionManifest[]): SeasonGroup[] {
           const times = ss.map(getSortTime).filter((v) => v > 0);
           const gpName = ss.find((s) => s.meeting_name)?.meeting_name ?? circuit;
           const hasSprint = ss.some((s) => (s.session_name || "").toLowerCase().includes("sprint"));
+          const driverShowcaseSession =
+            ss.find((s) => s.drivers.some((driver) => Boolean(driver.headshot_url))) ??
+            [...ss].sort((a, b) => b.drivers.length - a.drivers.length)[0];
           return {
             circuit,
             sessions: ss.sort((a, b) => getSortTime(a) - getSortTime(b)),
@@ -343,6 +374,8 @@ function buildSeasonGroups(sessions: SessionManifest[]): SeasonGroup[] {
             lastDate: times.length ? Math.max(...times) : 0,
             gpName,
             hasSprint,
+            meetingContext: ss.find((s) => s.meeting_context)?.meeting_context,
+            displayDrivers: driverShowcaseSession?.drivers ?? [],
           };
         })
         .sort((a, b) => a.firstDate - b.firstDate);
@@ -463,9 +496,7 @@ function YearView({ season, circuitPreviewKeys, onBack, onPickCircuit }: {
 
       <div className="nav-circuit-grid">
         {season.circuits.map((cg, idx) => {
-          const meta = CIRCUIT_META[cg.circuit];
-          const flag = meta?.flag ?? "🏎";
-          const country = meta?.country ?? cg.circuit;
+          const country = getCircuitCountryLabel(cg.meetingContext, cg.circuit);
           const round = String(idx + 1).padStart(2, "0");
           const previewSourceKeys =
             circuitPreviewKeys.get(cg.circuit) ??
@@ -485,9 +516,12 @@ function YearView({ season, circuitPreviewKeys, onBack, onPickCircuit }: {
                 {cg.hasSprint && <span className="nav-sprint-pill">Sprint</span>}
               </div>
               <CircuitTrackPreview sessionKeys={previewSourceKeys} title={`${cg.gpName} circuit layout`} />
-              <div className="nav-circuit-flag">{flag}</div>
+              <CircuitFlagMark context={cg.meetingContext} circuit={cg.circuit} variant="card" />
               <div className="nav-circuit-gp">{cg.gpName}</div>
               <div className="nav-circuit-country">{country}</div>
+              <div className="nav-circuit-meta">
+                {getCircuitDescriptor(cg.meetingContext, cg.circuit)}
+              </div>
               {cg.firstDate > 0 && (
                 <div className="nav-circuit-dates">
                   {fmtShort(new Date(cg.firstDate).toISOString())}
@@ -520,9 +554,7 @@ function CircuitView({ circuitGroup, year, roundNum, onBack, onSelect }: {
   onBack: () => void;
   onSelect: (session: SessionManifest) => void;
 }) {
-  const meta = CIRCUIT_META[circuitGroup.circuit];
-  const flag = meta?.flag ?? "🏎";
-  const country = meta?.country ?? circuitGroup.circuit;
+  const country = getCircuitCountryLabel(circuitGroup.meetingContext, circuitGroup.circuit);
   const round = String(roundNum).padStart(2, "0");
 
   const sortedSessions = [...circuitGroup.sessions].sort((a, b) => {
@@ -530,6 +562,10 @@ function CircuitView({ circuitGroup, year, roundNum, onBack, onSelect }: {
     if (ta.order !== tb.order) return ta.order - tb.order;
     return getSortTime(a) - getSortTime(b);
   });
+  const featuredGridSession =
+    sortedSessions.find((session) => session.starting_grid && session.starting_grid.length > 0) ?? null;
+  const circuitInfoUrl = circuitGroup.meetingContext?.circuit_info_url;
+  const circuitImage = circuitGroup.meetingContext?.circuit_image;
 
   return (
     <div className="nav-page">
@@ -540,11 +576,12 @@ function CircuitView({ circuitGroup, year, roundNum, onBack, onSelect }: {
       </div>
 
       <header className="nav-circuit-hero">
-        <div className="nav-circuit-hero-flag">{flag}</div>
+        <CircuitFlagMark context={circuitGroup.meetingContext} circuit={circuitGroup.circuit} variant="hero" />
         <div className="nav-circuit-hero-info">
           <h1 className="nav-circuit-hero-title">{circuitGroup.gpName}</h1>
           <p className="nav-circuit-hero-sub">
             Round {round} · {country}
+            {circuitGroup.meetingContext?.circuit_type ? ` · ${circuitGroup.meetingContext.circuit_type}` : ""}
             {circuitGroup.firstDate > 0 && (
               <>
                 {" · "}
@@ -555,11 +592,55 @@ function CircuitView({ circuitGroup, year, roundNum, onBack, onSelect }: {
               </>
             )}
           </p>
+          <p className="nav-circuit-hero-meta">
+            {getCircuitDescriptor(circuitGroup.meetingContext, circuitGroup.circuit)}
+          </p>
+          {featuredGridSession?.starting_grid && (
+            <div className="nav-grid-summary">
+              <span className="nav-grid-summary-label">Starting grid</span>
+              <span className="nav-grid-summary-headline">{getGridHeadline(featuredGridSession.starting_grid)}</span>
+              {getGridSubline(featuredGridSession.starting_grid) && (
+                <span className="nav-grid-summary-subline">{getGridSubline(featuredGridSession.starting_grid)}</span>
+              )}
+            </div>
+          )}
         </div>
+        {(circuitImage || circuitInfoUrl) && (
+          <div className="nav-circuit-media-card">
+            {circuitImage ? (
+              circuitInfoUrl ? (
+                <a href={circuitInfoUrl} target="_blank" rel="noreferrer" className="nav-circuit-media-link">
+                  <img
+                    className="nav-circuit-media-image"
+                    src={circuitImage}
+                    alt={`${circuitGroup.gpName} circuit preview`}
+                    loading="lazy"
+                  />
+                </a>
+              ) : (
+                <img
+                  className="nav-circuit-media-image"
+                  src={circuitImage}
+                  alt={`${circuitGroup.gpName} circuit preview`}
+                  loading="lazy"
+                />
+              )
+            ) : (
+              <div className="nav-circuit-media-placeholder">Circuit guide</div>
+            )}
+            {circuitInfoUrl && (
+              <a href={circuitInfoUrl} target="_blank" rel="noreferrer" className="nav-circuit-media-cta">
+                Open circuit guide ↗
+              </a>
+            )}
+          </div>
+        )}
         {circuitGroup.hasSprint && (
           <span className="nav-sprint-pill nav-sprint-pill--lg">Sprint Weekend</span>
         )}
       </header>
+
+      <DriverLineup drivers={circuitGroup.displayDrivers} />
 
       <div className="nav-session-list">
         {sortedSessions.map((s) => {
@@ -578,6 +659,9 @@ function CircuitView({ circuitGroup, year, roundNum, onBack, onSelect }: {
                 )}
                 {s.date_start_utc && (
                   <span className="nav-session-time">{fmtTime(s.date_start_utc)} UTC</span>
+                )}
+                {s.starting_grid && s.starting_grid.length > 0 && (
+                  <span className="nav-session-grid">{getGridHeadline(s.starting_grid)}</span>
                 )}
               </div>
               <span className="nav-session-drivers">{s.drivers.length} drivers</span>

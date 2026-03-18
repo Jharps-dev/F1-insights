@@ -214,6 +214,7 @@ export class ReplayService extends EventEmitter {
     }
 
     const towerState = this.stateBuilder.buildTowerState();
+    const locationState = this.stateBuilder.buildDriverLocations();
     const stintStates = this.stateBuilder.buildStintStates();
     const insightCards = this.stateBuilder.buildInsightCards(replayTime);
     const rcMessages = this.stateBuilder.getRaceControlMessages();
@@ -225,6 +226,7 @@ export class ReplayService extends EventEmitter {
       wall_time_utc: new Date().toISOString(),
       payload: {
         tower: towerState,
+        locations: locationState,
         stints: stintStates,
         insights: insightCards,
         race_control: rcMessages,
@@ -246,6 +248,7 @@ export class ReplayService extends EventEmitter {
       wall_time_utc: new Date().toISOString(),
       payload: {
         tower: this.stateBuilder.buildTowerState(),
+        locations: this.stateBuilder.buildDriverLocations(),
         stints: this.stateBuilder.buildStintStates(),
         insights: this.stateBuilder.buildInsightCards(replayTime),
         race_control: this.stateBuilder.getRaceControlMessages(),

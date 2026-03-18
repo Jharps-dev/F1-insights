@@ -30,6 +30,7 @@ export interface CanonicalEvent {
   // Event classification (kind + payload together describe what happened)
   kind:
     | "car_data" // Telemetry: speed, throttle, brake, gear, RPM
+    | "location" // Driver x/y coordinates around the circuit
     | "lap" // Lap time + metadata
     | "position" // Driver position/interval changes
     | "weather" // Track/air temperature, wind
@@ -69,6 +70,16 @@ export interface CarDataPayload {
   drs: boolean; // DRS open?
   lap_number?: number;
   session_time?: number; // Seconds from session start (OpenF1 convention)
+}
+
+/**
+ * Location event: driver coordinates in circuit space
+ */
+export interface LocationPayload {
+  x: number;
+  y: number;
+  z?: number;
+  session_time?: number; // Seconds from session start when provided by source
 }
 
 /**
@@ -155,6 +166,16 @@ export interface ResultPayload {
   }>;
 }
 
+export interface StartingGridEntry {
+  position: number;
+  driver_number: number;
+  driver_code?: string;
+  driver_name?: string;
+  team_name?: string;
+  team_color?: string;
+  grid_time?: string;
+}
+
 /**
  * FIA Official Document
  */
@@ -188,14 +209,30 @@ export interface SessionManifest {
   session_key: number;
   session_type: string;
   circuit_short_name?: string;
+  meeting_context?: {
+    meeting_official_name?: string;
+    location?: string;
+    country_code?: string;
+    country_name?: string;
+    country_flag?: string;
+    circuit_type?: string;
+    circuit_info_url?: string;
+    circuit_image?: string;
+  };
+  starting_grid?: StartingGridEntry[];
 
   // Drivers in session
   drivers: Array<{
     number: number;
     code: string;
     name?: string;
+    broadcast_name?: string;
+    first_name?: string;
+    last_name?: string;
     team?: string;
     team_color?: string;
+    headshot_url?: string;
+    country_code?: string;
   }>;
 
   // Source priority for conflict resolution
@@ -228,6 +265,7 @@ export interface StateStreamMessage {
   payload: {
     tower?: TowerState;
     telemetry?: TelemetryWindow;
+    locations?: DriverLocationState[];
     stints?: StintState[];
     insights?: InsightCard[];
     race_control?: RaceControlMessage[];
@@ -278,6 +316,20 @@ export interface TelemetryWindow {
     throttle: number;
     brake: number;
   }>;
+}
+
+/**
+ * Latest known driver coordinates projected for the circuit map.
+ */
+export interface DriverLocationState {
+  driver_number: number;
+  code: string;
+  x: number;
+  y: number;
+  z?: number;
+  time_utc: string;
+  position?: number;
+  team_color?: string;
 }
 
 /**
