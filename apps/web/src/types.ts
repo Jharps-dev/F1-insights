@@ -64,8 +64,17 @@ export interface TowerDriver {
   position: number;
   tyre_compound?: string;
   tyre_age?: number;
+  current_lap?: number;
   last_lap_ms?: number;
   best_lap_ms?: number;
+  best_sector_1_ms?: number;
+  best_sector_2_ms?: number;
+  best_sector_3_ms?: number;
+  current_speed_kmh?: number;
+  pit_count?: number;
+  intermediate_1_speed_kmh?: number;
+  intermediate_2_speed_kmh?: number;
+  speed_trap_kmh?: number;
   gap_to_leader_ms?: number | null;
   interval_to_ahead_ms?: number | null;
   gap_trend_ms_per_lap?: number;
@@ -86,6 +95,15 @@ export interface RaceControlMessage {
   category?: string;
   message: string;
   severity?: "info" | "warning" | "critical";
+}
+
+export interface RadioMessage {
+  id: string;
+  time_utc: string;
+  driver_number?: number;
+  driver_code?: string;
+  message: string;
+  audio_url?: string;
 }
 
 export interface StintState {
@@ -121,6 +139,13 @@ export interface ReplayStatus {
   speed: number;
   currentReplayTimeMs: number;
   durationMs?: number;
+}
+
+export interface SessionPhase {
+  key: string;
+  label: string;
+  startReplayMs: number;
+  endReplayMs?: number;
 }
 
 export interface LayoutPoint {

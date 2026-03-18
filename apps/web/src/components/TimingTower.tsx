@@ -23,6 +23,36 @@ function fmtGap(ms?: number | null): string {
   return `${sign}${fmtMs(Math.abs(ms))}`;
 }
 
+function fmtSpeed(speed?: number | null): string {
+  if (speed == null || speed <= 0) return "–";
+  return `${Math.round(speed)}k`;
+}
+
+function fmtDelta(driver: TowerDriver): string {
+  if (driver.position === 1) return "LEADER";
+  if (typeof driver.interval_to_ahead_ms === "number") {
+    return fmtGap(driver.interval_to_ahead_ms);
+  }
+  if (typeof driver.gap_to_leader_ms === "number") {
+    return fmtGap(driver.gap_to_leader_ms);
+  }
+  if (driver.status === "pit" || driver.status === "pit_box") {
+    return "PIT";
+  }
+  if (typeof driver.current_lap === "number" && driver.current_lap > 0) {
+    return `L${driver.current_lap}`;
+  }
+  return "–";
+}
+
+function fmtPits(driver: TowerDriver): string {
+  const pitCount = driver.pit_count ?? 0;
+  if (driver.status === "pit" || driver.status === "pit_box") {
+    return `${pitCount} PIT`;
+  }
+  return String(pitCount);
+}
+
 const TYRE_COLORS: Record<string, string> = {
   SOFT: "#E8002D",
   MEDIUM: "#FFF200",
@@ -72,7 +102,9 @@ export function TimingTower({ tower, selectedDriver, onSelectDriver }: Props) {
             <span>TYRE</span>
             <span>LAST LAP</span>
             <span>BEST</span>
-            <span>GAP</span>
+            <span>SPEED</span>
+            <span>PITS</span>
+            <span>DELTA</span>
             <span>S1 S2 S3</span>
           </div>
 
@@ -102,7 +134,9 @@ export function TimingTower({ tower, selectedDriver, onSelectDriver }: Props) {
                 </span>
                 <span className="tower-last">{fmtMs(d.last_lap_ms)}</span>
                 <span className="tower-best">{fmtMs(d.best_lap_ms)}</span>
-                <span className="tower-gap">{fmtGap(d.gap_to_leader_ms)}</span>
+                <span className="tower-speed">{fmtSpeed(d.current_speed_kmh)}</span>
+                <span className="tower-pits">{fmtPits(d)}</span>
+                <span className="tower-gap">{fmtDelta(d)}</span>
                 <span className="tower-sectors">
                   {[0, 1, 2].map((i) => (
                     <SectorDot key={i} state={d.sectors_state?.[i]} />

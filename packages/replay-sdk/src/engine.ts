@@ -6,7 +6,7 @@
  */
 
 import crypto from "crypto";
-import { CanonicalEvent, DriverLocationState, InsightCard, StintState, TowerState, StateStreamMessage } from "@f1-insights/schemas";
+import { CanonicalEvent, DriverLocationState, InsightCard, RadioMessage, StintState, TowerState, StateStreamMessage } from "@f1-insights/schemas";
 
 /**
  * Replay Clock: maps wall-clock to replay-time
@@ -193,6 +193,7 @@ export class StateBuilder {
   private driverStates: Map<number, DriverState> = new Map();
   private driverCatalog = new Map<number, { code: string; name?: string; team?: string; team_color?: string }>();
   private raceControlMessages: RaceControlEntry[] = [];
+  private radioMessages: RadioMessage[] = [];
   private telemetryBuffers: Map<number, TelemetryBuffer> = new Map();
   private eventsSeen = 0;
   private lastEventTime = "";
@@ -224,6 +225,7 @@ export class StateBuilder {
         const payload = event.payload as any;
 
         const state = this.getOrCreateDriver(driverNumber);
+        state.status = "running";
         state.lastTelemetry = {
           speed: payload.speed,
           throttle: payload.throttle,
@@ -243,14 +245,15 @@ export class StateBuilder {
         const state = this.getOrCreateDriver(driverNumber);
 
         state.currentLap = payload.lap_number;
-        state.lastLapMs = payload.lap_duration_ms;
         state.currentStintNumber = payload.stint_number ?? state.currentStintNumber ?? 1;
-        state.bestLapMs = Math.min(
-          state.bestLapMs || payload.lap_duration_ms,
-          payload.lap_duration_ms
-        );
         state.tyreCompound = payload.tyre_compound;
         state.tyreAge = payload.tyre_age_laps;
+        state.status = payload.is_pit_lap ? "pit" : "running";
+
+        if (payload.lap_duration_ms > 0) {
+          state.lastLapMs = payload.lap_duration_ms;
+          state.bestLapMs = Math.min(state.bestLapMs ?? payload.lap_duration_ms, payload.lap_duration_ms);
+        }
 
         if (!payload.is_pit_lap && payload.is_valid !== false && payload.lap_duration_ms > 0) {
           state.lapHistory.push({
@@ -283,6 +286,15 @@ export class StateBuilder {
           state.bestSector3Ms = Math.min(state.bestSector3Ms ?? payload.sector_3_ms, payload.sector_3_ms);
           this.sessionBestS3Ms = Math.min(this.sessionBestS3Ms ?? payload.sector_3_ms, payload.sector_3_ms);
         }
+        if (payload.i1_speed_kmh) {
+          state.bestI1SpeedKmh = Math.max(state.bestI1SpeedKmh ?? payload.i1_speed_kmh, payload.i1_speed_kmh);
+        }
+        if (payload.i2_speed_kmh) {
+          state.bestI2SpeedKmh = Math.max(state.bestI2SpeedKmh ?? payload.i2_speed_kmh, payload.i2_speed_kmh);
+        }
+        if (payload.speed_trap_kmh) {
+          state.bestSpeedTrapKmh = Math.max(state.bestSpeedTrapKmh ?? payload.speed_trap_kmh, payload.speed_trap_kmh);
+        }
         break;
       }
 
@@ -294,6 +306,9 @@ export class StateBuilder {
         }
 
         const state = this.getOrCreateDriver(driverNumber);
+        if (state.status !== "dnf") {
+          state.status = "running";
+        }
         state.latestLocation = {
           x: payload.x,
           y: payload.y,
@@ -311,6 +326,9 @@ export class StateBuilder {
         state.position = payload.position;
         state.gapToLeaderMs = payload.gap_to_leader_ms;
         state.intervalToAheadMs = payload.interval_to_ahead_ms;
+        if (state.status !== "dnf") {
+          state.status = "running";
+        }
         break;
       }
 
@@ -323,6 +341,22 @@ export class StateBuilder {
           message: payload.message,
           severity: payload.severity,
         });
+        break;
+      }
+
+      case "radio": {
+        const payload = event.payload as any;
+        this.radioMessages.push({
+          id: `radio_${this.eventsSeen}`,
+          time_utc: event.event_time_utc || "",
+          driver_number: driverNumber,
+          driver_code: event.driver?.code,
+          message: typeof payload.message === "string" ? payload.message : "Team radio available",
+          audio_url: typeof payload.audio_url === "string" ? payload.audio_url : undefined,
+        });
+        if (this.radioMessages.length > 120) {
+          this.radioMessages.shift();
+        }
         break;
       }
 
@@ -363,8 +397,17 @@ export class StateBuilder {
         position: driver.position,
         tyre_compound: driver.tyreCompound,
         tyre_age: driver.tyreAge,
+      current_lap: driver.currentLap,
         last_lap_ms: driver.lastLapMs,
         best_lap_ms: driver.bestLapMs,
+        best_sector_1_ms: driver.bestSector1Ms,
+        best_sector_2_ms: driver.bestSector2Ms,
+        best_sector_3_ms: driver.bestSector3Ms,
+      current_speed_kmh: driver.lastTelemetry?.speed,
+      pit_count: driver.pitCount,
+        intermediate_1_speed_kmh: driver.bestI1SpeedKmh,
+        intermediate_2_speed_kmh: driver.bestI2SpeedKmh,
+        speed_trap_kmh: driver.bestSpeedTrapKmh,
         gap_to_leader_ms: driver.gapToLeaderMs,
         interval_to_ahead_ms: driver.intervalToAheadMs,
         gap_trend_ms_per_lap: this.computeTrendPerLap(driver.lapHistory, "gapToLeaderMs"),
@@ -382,6 +425,10 @@ export class StateBuilder {
    */
   getRaceControlMessages() {
     return this.raceControlMessages;
+  }
+
+  getRadioMessages() {
+    return this.radioMessages;
   }
 
   buildDriverLocations(): DriverLocationState[] {
@@ -557,6 +604,7 @@ export class StateBuilder {
     this.sessionBestS1Ms = undefined;
     this.sessionBestS2Ms = undefined;
     this.sessionBestS3Ms = undefined;
+    this.radioMessages = [];
   }
 
   setDriverCatalog(
@@ -570,6 +618,22 @@ export class StateBuilder {
         team: driver.team,
         team_color: driver.team_color,
       });
+
+      // Seed placeholder entries so Replay Studio can render the session roster
+      // immediately on load before the first position/lap events are processed.
+      if (!this.driverStates.has(driver.number)) {
+        this.driverStates.set(driver.number, {
+          number: driver.number,
+          code: driver.code,
+          name: driver.name,
+          team: driver.team,
+          teamColor: driver.team_color,
+          position: 999,
+          status: "running",
+          pitCount: 0,
+          lapHistory: [],
+        });
+      }
     }
   }
 
@@ -674,6 +738,9 @@ interface DriverState {
   bestSector1Ms?: number;
   bestSector2Ms?: number;
   bestSector3Ms?: number;
+  bestI1SpeedKmh?: number;
+  bestI2SpeedKmh?: number;
+  bestSpeedTrapKmh?: number;
   tyreCompound?: string;
   tyreAge?: number;
   currentStintNumber?: number;

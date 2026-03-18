@@ -43,6 +43,18 @@ export interface CircuitMarker {
   labelX?: number;
   labelY?: number;
   labelColor?: string;
+  opacity?: number;
+  emphasized?: boolean;
+}
+
+export interface CircuitAnnotation {
+  key: number | string;
+  x: number;
+  y: number;
+  label: string;
+  detail?: string;
+  color?: string;
+  muted?: boolean;
 }
 
 interface CircuitGraphicProps {
@@ -53,6 +65,7 @@ interface CircuitGraphicProps {
   className?: string;
   variant?: "card" | "hero" | "map";
   markers?: CircuitMarker[];
+  annotations?: CircuitAnnotation[];
   showCenterLine?: boolean;
 }
 
@@ -279,6 +292,7 @@ export function CircuitGraphic({
   className,
   variant = "card",
   markers = [],
+  annotations = [],
   showCenterLine,
 }: CircuitGraphicProps) {
   if (!geometry) {
@@ -351,8 +365,36 @@ export function CircuitGraphic({
         strokeLinecap="round"
       />
 
+      {annotations.map((annotation) => (
+        <g
+          key={annotation.key}
+          className={`track-annotation ${annotation.muted ? "track-annotation-muted" : ""}`}
+          transform={`translate(${annotation.x}, ${annotation.y})`}
+        >
+          <circle r={5} fill={annotation.color ?? "#69f0c4"} fillOpacity={0.92} stroke="#09101a" strokeWidth={2} />
+          <rect
+            x={8}
+            y={annotation.detail ? -18 : -14}
+            rx={7}
+            ry={7}
+            width={annotation.detail ? 110 : 60}
+            height={annotation.detail ? 30 : 18}
+            fill="rgba(7,12,23,0.88)"
+            stroke="rgba(255,255,255,0.08)"
+          />
+          <text x={16} y={annotation.detail ? -6 : -2} fill={annotation.color ?? "#dff8ff"} fontSize={10} fontFamily="ui-monospace, monospace" fontWeight="700">
+            {annotation.label}
+          </text>
+          {annotation.detail ? (
+            <text x={16} y={6} fill="rgba(255,255,255,0.72)" fontSize={9} fontFamily="ui-monospace, monospace">
+              {annotation.detail}
+            </text>
+          ) : null}
+        </g>
+      ))}
+
       {markers.map((marker) => (
-        <g key={marker.key} className="driver-dot-group">
+        <g key={marker.key} className="driver-dot-group" opacity={marker.opacity ?? 1}>
           {(marker.trail ?? []).map((trailPoint, index) => (
             <circle
               key={`${marker.key}-trail-${index}`}
@@ -365,6 +407,9 @@ export function CircuitGraphic({
           ))}
           {marker.glow && <circle cx={marker.x} cy={marker.y} r={roadWidth * 1.45} fill={marker.color} opacity={0.28} />}
           {marker.glow && <circle cx={marker.x} cy={marker.y} r={roadWidth * 0.9} fill={marker.color} opacity={0.18} />}
+          {marker.emphasized ? (
+            <circle cx={marker.x} cy={marker.y} r={roadWidth * 1.18} fill="none" stroke="rgba(255,255,255,0.95)" strokeWidth={2} />
+          ) : null}
           <circle cx={marker.x} cy={marker.y} r={roadWidth * 0.72} fill={marker.color} stroke="#0a0c12" strokeWidth={2} />
           {marker.badge && typeof marker.badgeX === "number" && typeof marker.badgeY === "number" && (
             <text

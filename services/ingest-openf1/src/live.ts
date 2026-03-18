@@ -232,6 +232,9 @@ export class OpenF1LiveIngest extends EventEmitter {
             sector_3_ms: this.toNumber(row.duration_sector_3)
               ? (this.toNumber(row.duration_sector_3) as number) * 1000
               : undefined,
+            i1_speed_kmh: this.toNumber(row.i1_speed) ?? undefined,
+            i2_speed_kmh: this.toNumber(row.i2_speed) ?? undefined,
+            speed_trap_kmh: this.toNumber(row.st_speed) ?? undefined,
             tyre_compound: typeof row.compound === "string" ? row.compound : undefined,
           },
         };

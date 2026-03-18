@@ -91,6 +91,9 @@ export interface LapPayload {
   sector_1_ms?: number; // Sector times when available
   sector_2_ms?: number;
   sector_3_ms?: number;
+  i1_speed_kmh?: number;
+  i2_speed_kmh?: number;
+  speed_trap_kmh?: number;
   tyre_compound?: "S" | "M" | "H" | "I" | "W";
   tyre_age_laps?: number;
   is_pit_lap?: boolean;
@@ -272,6 +275,7 @@ export interface StateStreamMessage {
     stints?: StintState[];
     insights?: InsightCard[];
     race_control?: RaceControlMessage[];
+    radios?: RadioMessage[];
     driver_focus?: number | null; // Driver number if focused
   };
 
@@ -294,8 +298,17 @@ export interface TowerState {
     position: number;
     tyre_compound?: string;
     tyre_age?: number;
+    current_lap?: number;
     last_lap_ms?: number;
     best_lap_ms?: number;
+    best_sector_1_ms?: number;
+    best_sector_2_ms?: number;
+    best_sector_3_ms?: number;
+    current_speed_kmh?: number;
+    pit_count?: number;
+    intermediate_1_speed_kmh?: number;
+    intermediate_2_speed_kmh?: number;
+    speed_trap_kmh?: number;
     gap_to_leader_ms?: number;
     interval_to_ahead_ms?: number;
     gap_trend_ms_per_lap?: number;
@@ -319,6 +332,15 @@ export interface TelemetryWindow {
     throttle: number;
     brake: number;
   }>;
+}
+
+export interface RadioMessage {
+  id: string;
+  time_utc: string;
+  driver_number?: number;
+  driver_code?: string;
+  message: string;
+  audio_url?: string;
 }
 
 /**

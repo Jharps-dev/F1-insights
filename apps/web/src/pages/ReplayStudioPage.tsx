@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PlaybackBar } from "../components/PlaybackBar";
 import { RaceControlFeed } from "../components/RaceControlFeed";
+import { TeamRadioFeed } from "../components/TeamRadioFeed";
 import { TimingTower } from "../components/TimingTower";
 import { TrackMap } from "../components/TrackMap";
 import { useReplay } from "../app/providers/ReplayProvider";
@@ -40,6 +41,8 @@ export function ReplayStudioPage() {
     tower,
     locations,
     raceControl,
+    radios,
+    sessionPhases,
     selectedDriver,
     setSelectedDriver,
     replayStatus,
@@ -151,6 +154,17 @@ export function ReplayStudioPage() {
     }
   }, [ensureSessionKey, sessionKey]);
 
+  // Tick every second so the stale badge re-evaluates without needing a WS message.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const id = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   if (!activeSession) {
     const archiveUnavailable = Boolean(sessionsError);
 
@@ -184,23 +198,17 @@ export function ReplayStudioPage() {
 
   const circuitLabel = CIRCUIT_LABELS[activeSession.circuit_short_name] ?? activeSession.circuit_short_name;
   const sessionLabel = getDisplaySessionType(activeSession);
-
-  // Tick every second so the stale badge re-evaluates without needing a WS message.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const id = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(id);
-  }, []);
+  const sessionYear = activeSession.year;
 
   // Stale: connected, session loaded, but no update for >5 seconds while playing.
   const dataAgeMs = lastStateUpdateAt !== null ? now - lastStateUpdateAt : null;
   const isStale = connected && isPlaying && dataAgeMs !== null && dataAgeMs > 5_000;
   // Partial: connected but tower hasn't arrived yet.
   const isPartial = connected && tower === null;
+  const activePhaseKey = sessionPhases.find((phase) => {
+    const phaseEnd = typeof phase.endReplayMs === "number" ? phase.endReplayMs : Number.POSITIVE_INFINITY;
+    return replayStatus.currentReplayTimeMs >= phase.startReplayMs && replayStatus.currentReplayTimeMs < phaseEnd;
+  })?.key;
 
   return (
     <div className="replay-root">
@@ -215,19 +223,37 @@ export function ReplayStudioPage() {
           &#8592; Sessions
         </button>
         <div className="topbar-session">
-          <span className="topbar-circuit">{circuitLabel}</span>
-          <span className="topbar-type">{sessionLabel}</span>
-          <span className="topbar-key">#{activeSession.session_key}</span>
-          {isStale && (
-            <span className="topbar-data-badge topbar-data-badge--stale" title={`No update for ${Math.round((dataAgeMs ?? 0) / 1000)}s`}>
-              Stale
-            </span>
-          )}
-          {!isStale && isPartial && (
-            <span className="topbar-data-badge topbar-data-badge--partial" title="Waiting for first data snapshot">
-              Loading
-            </span>
-          )}
+          <div className="topbar-session-main">
+            <span className="topbar-circuit">{circuitLabel}</span>
+            {typeof sessionYear === "number" ? <span className="topbar-year">{sessionYear}</span> : null}
+            <span className="topbar-type">{sessionLabel}</span>
+            <span className="topbar-key">#{activeSession.session_key}</span>
+            {isStale && (
+              <span className="topbar-data-badge topbar-data-badge--stale" title={`No update for ${Math.round((dataAgeMs ?? 0) / 1000)}s`}>
+                Stale
+              </span>
+            )}
+            {!isStale && isPartial && (
+              <span className="topbar-data-badge topbar-data-badge--partial" title="Waiting for first data snapshot">
+                Loading
+              </span>
+            )}
+          </div>
+          {sessionPhases.length > 0 ? (
+            <div className="topbar-phase-strip" aria-label="Session phases">
+              {sessionPhases.map((phase) => (
+                <button
+                  key={phase.key}
+                  className={`topbar-phase-chip ${activePhaseKey === phase.key ? "is-active" : ""}`}
+                  onClick={() => seekTo(phase.startReplayMs)}
+                  type="button"
+                  title={`Jump to ${phase.label}`}
+                >
+                  {phase.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="topbar-live">
           <span className={`topbar-live-chip ${liveStatus?.connected ? "chip-on" : "chip-off"}`}>
@@ -266,6 +292,7 @@ export function ReplayStudioPage() {
             tower={tower}
             locations={locations}
             replayTimeMs={replayStatus.currentReplayTimeMs}
+            selectedDriver={selectedDriver}
             fallbackSeed={activeSession.circuit_short_name || String(activeSession.session_key)}
           />
         </section>
@@ -293,6 +320,7 @@ export function ReplayStudioPage() {
             </div>
           ) : null}
           <TimingTower tower={tower} selectedDriver={selectedDriver} onSelectDriver={setSelectedDriver} />
+          <TeamRadioFeed radios={radios} selectedDriver={selectedDriver} />
           <RaceControlFeed messages={raceControl} />
         </section>
       </main>

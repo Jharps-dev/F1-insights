@@ -139,6 +139,40 @@ function formatGridLapTime(value: unknown): string | undefined {
   return parsed.toFixed(3);
 }
 
+function toIsoFromMs(value: number | undefined): string | undefined {
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return new Date(value as number).toISOString();
+}
+
+function deriveLapEventTimeUtc(row: Record<string, unknown>, sessionData: Record<string, unknown>): string {
+  const dateStartRaw = typeof row.date_start === "string" ? row.date_start : undefined;
+  const lapStartMs = dateStartRaw ? Date.parse(dateStartRaw) : Number.NaN;
+  const lapDurationSeconds = toOptionalNumber(row.lap_duration);
+
+  if (Number.isFinite(lapStartMs) && typeof lapDurationSeconds === "number" && lapDurationSeconds > 0) {
+    const lapEndIso = toIsoFromMs(lapStartMs + lapDurationSeconds * 1000);
+    if (lapEndIso) {
+      return lapEndIso;
+    }
+  }
+
+  if (Number.isFinite(lapStartMs)) {
+    const lapStartIso = toIsoFromMs(lapStartMs);
+    if (lapStartIso) {
+      return lapStartIso;
+    }
+  }
+
+  if (typeof row.date === "string" && row.date.trim().length > 0) {
+    return row.date;
+  }
+
+  return String(sessionData.date_end || sessionData.date_start || new Date().toISOString());
+}
+
 function buildMeetingContext(meetingData: any): SessionManifest["meeting_context"] | undefined {
   if (!meetingData) {
     return undefined;
@@ -595,7 +629,7 @@ export async function importOpenF1Session(
         schema_version: CANONICAL_SCHEMA_VERSION,
         source: "openf1",
         ingest_time_utc: new Date().toISOString(),
-        event_time_utc: row.date || new Date().toISOString(),
+        event_time_utc: deriveLapEventTimeUtc(row, sessionData),
         meeting_key: meetingKey,
         session_key: sessionKey,
         kind: "lap",
@@ -606,13 +640,16 @@ export async function importOpenF1Session(
         payload: {
           lap_number: row.lap_number,
           lap_duration_ms: row.lap_duration ? row.lap_duration * 1000 : 0,
-          sector_1_ms: row.sector_1_session_time ? row.sector_1_session_time * 1000 : null,
-          sector_2_ms: row.sector_2_session_time ? row.sector_2_session_time * 1000 : null,
-          sector_3_ms: row.sector_3_session_time ? row.sector_3_session_time * 1000 : null,
+          sector_1_ms: row.duration_sector_1 ? row.duration_sector_1 * 1000 : null,
+          sector_2_ms: row.duration_sector_2 ? row.duration_sector_2 * 1000 : null,
+          sector_3_ms: row.duration_sector_3 ? row.duration_sector_3 * 1000 : null,
+          i1_speed_kmh: toOptionalNumber(row.i1_speed),
+          i2_speed_kmh: toOptionalNumber(row.i2_speed),
+          speed_trap_kmh: toOptionalNumber(row.st_speed),
           tyre_compound: row.tyre_compound || matchingStint?.compound,
           tyre_age_laps: row.tyre_age_laps ?? matchingStint?.tyre_age_at_start,
           stint_number: matchingStint?.stint_number,
-          is_pit_lap: row.pit_out_time !== null,
+          is_pit_lap: row.is_pit_out_lap === true,
           is_valid: !row.is_deleted,
         },
       });
@@ -880,6 +917,12 @@ export async function listOpenF1Sessions(year?: number): Promise<any[]> {
   const url = year ? `${BASE_URL}/sessions?year=${year}` : `${BASE_URL}/sessions`;
   const sessions = await fetchCached(url);
   return sessions;
+}
+
+export async function listOpenF1Meetings(year?: number): Promise<any[]> {
+  const url = year ? `${BASE_URL}/meetings?year=${year}` : `${BASE_URL}/meetings`;
+  const meetings = await fetchCached(url);
+  return meetings;
 }
 
 export { fetchCached, fetchWithBackoff };

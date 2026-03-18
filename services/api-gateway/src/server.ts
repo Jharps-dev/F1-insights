@@ -66,6 +66,12 @@ interface LayoutManifest {
   drivers?: Array<{ number?: number }>;
 }
 
+interface RawLocationPoint {
+  x: number;
+  y: number;
+  date?: string;
+}
+
 let assetRefreshPromise: Promise<void> | null = null;
 
 function manifestsEqual(a: SessionManifest, b: SessionManifest): boolean {
@@ -149,6 +155,50 @@ function isLayoutPointArray(value: unknown): value is LayoutPoint[] {
   });
 }
 
+function isUsableLayoutCache(points: LayoutPoint[]): boolean {
+  if (!Array.isArray(points) || points.length < 8) {
+    return false;
+  }
+
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const point of points) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  const uniqueBuckets = new Set(points.map((point) => `${Math.round(point.x)}:${Math.round(point.y)}`));
+  return spanX >= 10 && spanY >= 10 && uniqueBuckets.size >= 12;
+}
+
+function normalizeRawLayoutPoints(points: RawLocationPoint[]): LayoutPoint[] {
+  if (!Array.isArray(points) || points.length === 0) {
+    return [];
+  }
+
+  const movingPoints = points.filter((point, index, array) => {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      return false;
+    }
+    if (point.x === 0 && point.y === 0) {
+      return false;
+    }
+    if (index === 0) {
+      return true;
+    }
+    const previous = array[index - 1];
+    return point.x !== previous.x || point.y !== previous.y;
+  });
+
+  return movingPoints.map((point) => ({ x: point.x, y: point.y }));
+}
+
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
     const raw = await fs.readFile(filePath, "utf8");
@@ -166,7 +216,7 @@ async function readLayoutCache(sessionKey: number): Promise<LayoutPoint[] | null
 
   for (const filePath of candidateFiles) {
     const parsed = await readJsonFile<unknown>(filePath);
-    if (isLayoutPointArray(parsed) && parsed.length >= 8) {
+    if (isLayoutPointArray(parsed) && isUsableLayoutCache(parsed)) {
       return parsed;
     }
   }
@@ -372,12 +422,13 @@ wss.on("connection", async (ws) => {
           replayService
             .loadSession(normalizedSessionKey)
             .then(() => {
-              const { sessionDurationMs } = replayService.getStatus();
+              const { sessionDurationMs, sessionPhases } = replayService.getStatus();
               ws.send(
                 JSON.stringify({
                   type: "session_loaded",
                   sessionKey: normalizedSessionKey,
                   session_duration_ms: sessionDurationMs,
+                  session_phases: sessionPhases,
                 })
               );
             })
@@ -485,7 +536,7 @@ app.post("/api/sessions/:key/import", async (req, res) => {
   const profile: ImportProfile =
     requestedProfile === "lite" || requestedProfile === "standard" || requestedProfile === "full"
       ? requestedProfile
-      : "standard";
+      : "full";
 
   try {
     const { events, manifest } = await importOpenF1Session(sessionKey, { profile });
@@ -751,29 +802,35 @@ app.get("/api/sessions/:key/layout", async (req, res) => {
         lastError = new Error(`OpenF1 API returned ${response.status} for driver ${driverNumber}`);
         continue;
       }
-      const data = (await response.json()) as Array<{ x: number; y: number; date: string }>;
-      if (!Array.isArray(data) || data.length < 100) {
+      const data = (await response.json()) as RawLocationPoint[];
+      const usablePoints = normalizeRawLayoutPoints(data);
+      if (!Array.isArray(usablePoints) || usablePoints.length < 100) {
         lastError = new Error(`Insufficient data for driver ${driverNumber} (${data?.length ?? 0} pts)`);
         continue;
       }
 
       // Extract first complete lap by detecting return near the starting point.
-      const start = data[0];
-      let endIndex = Math.min(data.length - 1, 2400);
+      const start = usablePoints[0];
+      let endIndex = Math.min(usablePoints.length - 1, 2400);
       const minSamplesBeforeClose = 350;
       const closeThreshold = 180;
-      for (let i = minSamplesBeforeClose; i < data.length; i++) {
-        const dx = data[i].x - start.x;
-        const dy = data[i].y - start.y;
+      for (let i = minSamplesBeforeClose; i < usablePoints.length; i++) {
+        const dx = usablePoints[i].x - start.x;
+        const dy = usablePoints[i].y - start.y;
         if (Math.sqrt(dx * dx + dy * dy) <= closeThreshold) {
           endIndex = i;
           break;
         }
       }
 
-      const lapSlice = data.slice(0, endIndex + 1);
+      const lapSlice = usablePoints.slice(0, endIndex + 1);
       const step = Math.max(1, Math.floor(lapSlice.length / 500));
-      const layout = lapSlice.filter((_, i) => i % step === 0).map((d) => ({ x: d.x, y: d.y }));
+      const layout = lapSlice.filter((_, i) => i % step === 0).map((point) => ({ x: point.x, y: point.y }));
+
+      if (!isUsableLayoutCache(layout)) {
+        lastError = new Error(`Degenerate layout for driver ${driverNumber}`);
+        continue;
+      }
 
       await fs.writeFile(cacheFile, JSON.stringify(layout), "utf8");
       console.log(`[LAYOUT] Cached ${layout.length} points from driver ${driverNumber} for session ${key}`);

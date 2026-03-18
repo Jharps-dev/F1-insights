@@ -19,6 +19,13 @@ export interface ReplayServiceConfig {
   port?: number;
 }
 
+interface SessionPhase {
+  key: string;
+  label: string;
+  startReplayMs: number;
+  endReplayMs?: number;
+}
+
 export class ReplayService extends EventEmitter {
   private clock: ReplayClock;
   private cursor: EventCursor | null = null;
@@ -30,6 +37,7 @@ export class ReplayService extends EventEmitter {
   private tickInterval: NodeJS.Timeout | null = null;
   private sequenceId = 0;
   private sessionDurationMs = 0;
+  private sessionPhases: SessionPhase[] = [];
   private subscribers = new Set<(msg: StateStreamMessage) => void>();
 
   constructor(config: ReplayServiceConfig) {
@@ -51,6 +59,89 @@ export class ReplayService extends EventEmitter {
       start: Number.isFinite(start) ? start : null,
       end: Number.isFinite(end) ? end : null,
     };
+  }
+
+  private getTimelineBounds(times: number[]): { min: number | null; max: number | null } {
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+
+    for (const value of times) {
+      if (!Number.isFinite(value)) {
+        continue;
+      }
+      if (value < min) {
+        min = value;
+      }
+      if (value > max) {
+        max = value;
+      }
+    }
+
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      return { min: null, max: null };
+    }
+
+    return { min, max };
+  }
+
+  private inferSessionPhases(events: CanonicalEvent[]): SessionPhase[] {
+    if (this.sessionStartTimeMs === null || !this.manifest) {
+      return [];
+    }
+
+    const rawSessionName = `${this.manifest.session_name || ""} ${this.manifest.session_type || ""}`.toLowerCase();
+    const isSprintQualifying = rawSessionName.includes("sprint qualifying") || rawSessionName.includes("sprint shootout");
+    const isQualifying = isSprintQualifying || rawSessionName.includes("qualifying");
+    if (!isQualifying) {
+      return [];
+    }
+
+    const phasePrefix = isSprintQualifying ? "SQ" : "Q";
+    const phaseStarts = new Map<string, number>();
+    const startPattern = /\b((?:SQ|Q)[123])\s+WILL\s+(?:START|RESUME)\s+AT\b/i;
+
+    for (const event of events) {
+      if (event.kind !== "race_control") {
+        continue;
+      }
+
+      const message = typeof (event.payload as any)?.message === "string" ? (event.payload as any).message : "";
+      const match = message.match(startPattern);
+      if (!match) {
+        continue;
+      }
+
+      const label = match[1].toUpperCase();
+      const eventTimeMs = this.getEventTimeMs(event);
+      if (eventTimeMs === null || phaseStarts.has(label)) {
+        continue;
+      }
+
+      phaseStarts.set(label, Math.max(0, eventTimeMs - this.sessionStartTimeMs));
+    }
+
+    const phases: SessionPhase[] = [];
+    for (let index = 1; index <= 3; index += 1) {
+      const label = `${phasePrefix}${index}`;
+      const startReplayMs = phaseStarts.get(label);
+      if (startReplayMs === undefined) {
+        if (index === 1) {
+          phases.push({ key: label.toLowerCase(), label, startReplayMs: 0 });
+        }
+        continue;
+      }
+
+      phases.push({ key: label.toLowerCase(), label, startReplayMs });
+    }
+
+    phases.sort((a, b) => a.startReplayMs - b.startReplayMs);
+    for (let index = 0; index < phases.length; index += 1) {
+      const current = phases[index];
+      const next = phases[index + 1];
+      current.endReplayMs = next ? next.startReplayMs : this.sessionDurationMs;
+    }
+
+    return phases;
   }
 
   /**
@@ -112,9 +203,11 @@ export class ReplayService extends EventEmitter {
         : [];
 
     const timelineTimes = inManifestWindow.length > 0 ? inManifestWindow : rawTimes;
-    this.sessionStartTimeMs = timelineTimes.length > 0 ? Math.min(...timelineTimes) : null;
+    const { min: timelineStartMs, max: timelineEndMs } = this.getTimelineBounds(timelineTimes);
+    this.sessionStartTimeMs = timelineStartMs;
     this.sessionDurationMs =
-      timelineTimes.length > 1 ? Math.max(0, Math.max(...timelineTimes) - this.sessionStartTimeMs!) : 0;
+      timelineStartMs !== null && timelineEndMs !== null ? Math.max(0, timelineEndMs - timelineStartMs) : 0;
+    this.sessionPhases = this.inferSessionPhases(events);
 
     console.log(`  ✓ Loaded ${events.length} events`);
 
@@ -125,6 +218,13 @@ export class ReplayService extends EventEmitter {
     }
     this.clock.seekTo(0);
     this.clock.pause();
+
+    if (this.sessionStartTimeMs !== null) {
+      const initialEvents = this.cursor.seekToTime(this.sessionStartTimeMs);
+      if (initialEvents.length > 0) {
+        this.stateBuilder.processEvents(initialEvents);
+      }
+    }
 
     // Emit a deterministic reset snapshot immediately so clients clear stale UI.
     this.emitSnapshot();
@@ -138,10 +238,14 @@ export class ReplayService extends EventEmitter {
    * Emits state deltas to subscribers at regular intervals
    */
   start(tickRateHz = 10): void {
-    if (this.tickInterval) return;
+    this.clock.play();
+
+    if (this.tickInterval) {
+      console.log(`[REPLAY] Resumed at ${tickRateHz} Hz`);
+      return;
+    }
 
     console.log(`[REPLAY] Starting at ${tickRateHz} Hz`);
-    this.clock.play();
 
     const tickMs = 1000 / tickRateHz;
     this.tickInterval = setInterval(() => {
@@ -154,6 +258,10 @@ export class ReplayService extends EventEmitter {
    */
   pause(): void {
     this.clock.pause();
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = null;
+    }
     console.log(`[REPLAY] Paused at ${this.clock.getCurrentReplayTime()}ms`);
   }
 
@@ -218,6 +326,7 @@ export class ReplayService extends EventEmitter {
     const stintStates = this.stateBuilder.buildStintStates();
     const insightCards = this.stateBuilder.buildInsightCards(replayTime);
     const rcMessages = this.stateBuilder.getRaceControlMessages();
+    const radioMessages = this.stateBuilder.getRadioMessages();
 
     const message: StateStreamMessage = {
       type: "state_delta",
@@ -230,6 +339,7 @@ export class ReplayService extends EventEmitter {
         stints: stintStates,
         insights: insightCards,
         race_control: rcMessages,
+        radios: radioMessages,
       },
       queue_depth: 0,
       recommended_fps: 60,
@@ -252,6 +362,7 @@ export class ReplayService extends EventEmitter {
         stints: this.stateBuilder.buildStintStates(),
         insights: this.stateBuilder.buildInsightCards(replayTime),
         race_control: this.stateBuilder.getRaceControlMessages(),
+        radios: this.stateBuilder.getRadioMessages(),
       },
       queue_depth: 0,
       recommended_fps: 60,
@@ -316,6 +427,7 @@ export class ReplayService extends EventEmitter {
       clock: this.clock.getState(),
       subscribers: this.subscribers.size,
       sessionDurationMs: this.sessionDurationMs,
+      sessionPhases: this.sessionPhases,
     };
   }
 

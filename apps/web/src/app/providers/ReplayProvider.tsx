@@ -5,7 +5,9 @@ import type {
   LayoutPoint,
   LiveStatus,
   RaceControlMessage,
+  RadioMessage,
   ReplayStatus,
+  SessionPhase,
   SessionManifest,
   StintState,
   TowerState,
@@ -31,6 +33,8 @@ interface ReplayContextValue {
   stints: StintState[];
   insights: InsightCard[];
   raceControl: RaceControlMessage[];
+  radios: RadioMessage[];
+  sessionPhases: SessionPhase[];
   selectedDriver: number | null;
   liveStatus: LiveStatus | null;
   liveBusy: boolean;
@@ -112,6 +116,8 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
   const [stints, setStints] = useState<StintState[]>([]);
   const [insights, setInsights] = useState<InsightCard[]>([]);
   const [raceControl, setRaceControl] = useState<RaceControlMessage[]>([]);
+  const [radios, setRadios] = useState<RadioMessage[]>([]);
+  const [sessionPhases, setSessionPhases] = useState<SessionPhase[]>([]);
   const [selectedDriver, setSelectedDriver] = useState<number | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
@@ -209,6 +215,8 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     setStints([]);
     setInsights([]);
     setRaceControl([]);
+    setRadios([]);
+    setSessionPhases([]);
     setSelectedDriver(null);
     setReplayStatus({ paused: true, speed: 1, currentReplayTimeMs: 0 });
   }, []);
@@ -336,6 +344,17 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
             currentReplayTimeMs: 0,
             durationMs: typeof message.session_duration_ms === "number" ? message.session_duration_ms : undefined,
           });
+          setSessionPhases(
+            Array.isArray(message.session_phases)
+              ? message.session_phases.filter(
+                  (phase: unknown): phase is SessionPhase =>
+                    Boolean(phase) &&
+                    typeof (phase as SessionPhase).key === "string" &&
+                    typeof (phase as SessionPhase).label === "string" &&
+                    typeof (phase as SessionPhase).startReplayMs === "number"
+                )
+              : []
+          );
           setIsPlaying(false);
           setSessionError(null);
           return;
@@ -361,6 +380,9 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
           }
           if (Array.isArray(message.payload?.race_control)) {
             setRaceControl(message.payload.race_control);
+          }
+          if (Array.isArray(message.payload?.radios)) {
+            setRadios(message.payload.radios);
           }
           return;
         }
@@ -525,6 +547,8 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
         stints,
         insights,
         raceControl,
+        radios,
+        sessionPhases,
         selectedDriver,
         liveStatus,
         liveBusy,

@@ -7,7 +7,7 @@
 import fs from "fs/promises";
 import path from "path";
 import type { SessionManifest } from "@f1-insights/schemas";
-import { backfillOpenF1Manifests, importOpenF1Session, listOpenF1Sessions, type ImportProfile } from "./importer";
+import { backfillOpenF1Manifests, importOpenF1Session, listOpenF1Meetings, listOpenF1Sessions, type ImportProfile } from "./importer";
 import { mirrorSessionManifestAssets } from "./assets";
 
 function getArgValue(args: string[], key: string): string | undefined {
@@ -20,7 +20,7 @@ function getArgValue(args: string[], key: string): string | undefined {
 
 function parseProfile(value: string | undefined): ImportProfile {
   if (!value) {
-    return "standard";
+    return "full";
   }
   if (value === "lite" || value === "standard" || value === "full") {
     return value;
@@ -30,11 +30,93 @@ function parseProfile(value: string | undefined): ImportProfile {
 
 function normalizeSessionType(raw: string): string {
   const trimmed = raw.trim().toLowerCase();
+  if (trimmed === "sprint qualifying" || trimmed === "sprint shootout") return "Sprint Qualifying";
   if (trimmed === "practice") return "Practice";
   if (trimmed === "qualifying") return "Qualifying";
   if (trimmed === "race") return "Race";
   if (trimmed === "sprint") return "Sprint";
   return raw.trim();
+}
+
+function parseYear(value: string | undefined, label: string): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = parseInt(value, 10);
+  if (!parsed || Number.isNaN(parsed)) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return parsed;
+}
+
+function parseYearList(value: string | undefined): number[] {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(",")
+    .map((part) => parseInt(part.trim(), 10))
+    .filter((year) => Number.isInteger(year) && year > 2000);
+}
+
+function collectTargetYears(options: {
+  yearRaw?: string;
+  yearsRaw?: string;
+  fromYearRaw?: string;
+  toYearRaw?: string;
+}): number[] {
+  const directYears = parseYearList(options.yearsRaw);
+  if (directYears.length > 0) {
+    return Array.from(new Set(directYears)).sort((a, b) => a - b);
+  }
+
+  const singleYear = parseYear(options.yearRaw, "year");
+  if (singleYear) {
+    return [singleYear];
+  }
+
+  const fromYear = parseYear(options.fromYearRaw, "from-year");
+  const toYear = parseYear(options.toYearRaw, "to-year");
+  if (fromYear && toYear) {
+    if (fromYear > toYear) {
+      throw new Error("from-year must be less than or equal to to-year");
+    }
+    const years: number[] = [];
+    for (let year = fromYear; year <= toYear; year += 1) {
+      years.push(year);
+    }
+    return years;
+  }
+
+  return [];
+}
+
+async function datasetExists(outputDir: string, sessionKey: number): Promise<boolean> {
+  const manifestPath = path.join(outputDir, `manifest_${sessionKey}.json`);
+  const eventsPath = path.join(outputDir, `events_${sessionKey}.jsonl`);
+  try {
+    await fs.access(manifestPath);
+    await fs.access(eventsPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isFormula1Meeting(meeting: any): boolean {
+  const descriptor = [meeting?.meeting_official_name, meeting?.meeting_name, meeting?.location, meeting?.country_name]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .toLowerCase();
+  return descriptor.includes("formula 1");
+}
+
+function sessionMatchesType(session: any, allowedTypes: Set<string>): boolean {
+  const typeCandidates = [session?.session_name, session?.session_type]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => normalizeSessionType(value));
+
+  return typeCandidates.some((value) => allowedTypes.has(value));
 }
 
 async function writeImportedSession(outputDir: string, sessionKey: number, events: unknown[], manifest: unknown) {
@@ -53,16 +135,26 @@ async function main() {
   const args = process.argv.slice(2);
   const sessionRaw = getArgValue(args, "--session");
   const yearRaw = getArgValue(args, "--year");
+  const yearsRaw = getArgValue(args, "--years");
+  const fromYearRaw = getArgValue(args, "--from-year");
+  const toYearRaw = getArgValue(args, "--to-year");
   const outputDir = getArgValue(args, "--output") || "./data";
   const profile = parseProfile(getArgValue(args, "--profile"));
-  const typesRaw = getArgValue(args, "--types") || "Practice,Qualifying,Race,Sprint";
+  const typesRaw = getArgValue(args, "--types") || "Practice,Qualifying,Sprint,Sprint Qualifying,Race";
   const backfillManifests = args.includes("--backfill-manifests");
   const force = args.includes("--force");
+  const skipExisting = args.includes("--skip-existing");
+  const allSeries = args.includes("--all-series");
+  const failFast = args.includes("--fail-fast");
 
-  if (!sessionRaw && !yearRaw && !backfillManifests) {
+  const targetYears = collectTargetYears({ yearRaw, yearsRaw, fromYearRaw, toYearRaw });
+
+  if (!sessionRaw && targetYears.length === 0 && !backfillManifests) {
     console.error("Usage:");
     console.error("  npx tsx cli.ts --session <sessionKey> [--output <dir>] [--profile lite|standard|full]");
     console.error("  npx tsx cli.ts --year <year> [--types Race,Qualifying,Sprint] [--output <dir>] [--profile lite|standard|full]");
+    console.error("  npx tsx cli.ts --years 2023,2024,2025,2026 [--types ...] [--skip-existing] [--all-series] [--profile lite|standard|full]");
+    console.error("  npx tsx cli.ts --from-year 2023 --to-year 2026 [--types ...] [--skip-existing] [--all-series] [--profile lite|standard|full]");
     console.error("  npx tsx cli.ts --backfill-manifests [--output <dir>] [--force]");
     process.exit(1);
   }
@@ -97,47 +189,85 @@ async function main() {
       return;
     }
 
-    const year = parseInt(yearRaw || "", 10);
-    if (!year || isNaN(year)) {
-      throw new Error("Invalid year");
-    }
-
     const allowedTypes = new Set(typesRaw.split(",").map((t) => normalizeSessionType(t)).filter(Boolean));
-    const sessions = await listOpenF1Sessions(year);
-    const filtered = sessions
-      .filter((s) => allowedTypes.has(normalizeSessionType(String(s.session_type || ""))))
-      .sort((a, b) => {
-        const da = new Date(String(a.date_start || "")).getTime();
-        const db = new Date(String(b.date_start || "")).getTime();
-        return da - db;
-      });
+    let totalImported = 0;
+    let totalSkipped = 0;
+    let totalFailed = 0;
 
-    console.log(`\n[IMPORT] Year ${year}`);
-    console.log(`  Profile: ${profile}`);
-    console.log(`  Session types: ${Array.from(allowedTypes).join(", ")}`);
-    console.log(`  Matched sessions: ${filtered.length}`);
+    for (const year of targetYears) {
+      const sessions = await listOpenF1Sessions(year);
+      const f1MeetingKeys = allSeries
+        ? null
+        : new Set(
+            (await listOpenF1Meetings(year))
+              .filter((meeting) => isFormula1Meeting(meeting))
+              .map((meeting) => Number(meeting.meeting_key))
+              .filter((meetingKey) => Number.isInteger(meetingKey) && meetingKey > 0)
+          );
 
-    let ok = 0;
-    let failed = 0;
-    for (const session of filtered) {
-      const sessionKey = Number(session.session_key);
-      if (!sessionKey) {
-        continue;
+      const filtered = sessions
+        .filter((session) => {
+          const meetingKey = Number(session.meeting_key);
+          if (f1MeetingKeys && !f1MeetingKeys.has(meetingKey)) {
+            return false;
+          }
+          return sessionMatchesType(session, allowedTypes);
+        })
+        .sort((a, b) => {
+          const da = new Date(String(a.date_start || "")).getTime();
+          const db = new Date(String(b.date_start || "")).getTime();
+          return da - db;
+        });
+
+      console.log(`\n[IMPORT] Year ${year}`);
+      console.log(`  Profile: ${profile}`);
+      console.log(`  Session types: ${Array.from(allowedTypes).join(", ")}`);
+      console.log(`  Series filter: ${allSeries ? "all series" : "Formula 1 meetings only"}`);
+      console.log(`  Matched sessions: ${filtered.length}`);
+
+      let imported = 0;
+      let skipped = 0;
+      let failed = 0;
+      for (const session of filtered) {
+        const sessionKey = Number(session.session_key);
+        if (!sessionKey) {
+          continue;
+        }
+
+        if (!force && skipExisting && (await datasetExists(outputDir, sessionKey))) {
+          skipped += 1;
+          console.log(`[IMPORT] Skipping existing session ${sessionKey}`);
+          continue;
+        }
+
+        try {
+          const { events, manifest } = await importOpenF1Session(sessionKey, { profile });
+          await writeImportedSession(outputDir, sessionKey, events, manifest);
+          imported += 1;
+        } catch (err) {
+          failed += 1;
+          console.error(`[IMPORT] Failed session ${sessionKey}:`, err);
+          if (failFast) {
+            throw err;
+          }
+        }
       }
 
-      try {
-        const { events, manifest } = await importOpenF1Session(sessionKey, { profile });
-        await writeImportedSession(outputDir, sessionKey, events, manifest);
-        ok += 1;
-      } catch (err) {
-        failed += 1;
-        console.error(`[IMPORT] Failed session ${sessionKey}:`, err);
-      }
+      totalImported += imported;
+      totalSkipped += skipped;
+      totalFailed += failed;
+
+      console.log(`\n✓ Year ${year} import complete`);
+      console.log(`  Imported: ${imported}`);
+      console.log(`  Skipped: ${skipped}`);
+      console.log(`  Failed: ${failed}`);
     }
 
-    console.log(`\n✓ Year import complete`);
-    console.log(`  Imported: ${ok}`);
-    console.log(`  Failed: ${failed}`);
+    console.log(`\n✓ Archive import complete`);
+    console.log(`  Years: ${targetYears.join(", ")}`);
+    console.log(`  Imported: ${totalImported}`);
+    console.log(`  Skipped: ${totalSkipped}`);
+    console.log(`  Failed: ${totalFailed}`);
   } catch (err) {
     console.error(`Failed to import session: ${err}`);
     process.exit(1);

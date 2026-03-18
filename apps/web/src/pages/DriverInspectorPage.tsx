@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { TeamRadioFeed } from "../components/TeamRadioFeed";
 import { TimingTower } from "../components/TimingTower";
 import { useReplay } from "../app/providers/ReplayProvider";
 
@@ -25,7 +26,7 @@ function formatLap(ms?: number | null): string {
 
 export function DriverInspectorPage() {
   const navigate = useNavigate();
-  const { activeSession, tower, selectedDriver, setSelectedDriver, sessionsError } = useReplay();
+  const { activeSession, tower, radios, selectedDriver, setSelectedDriver, sessionsError } = useReplay();
 
   if (!activeSession || !tower) {
     return (
@@ -90,6 +91,28 @@ export function DriverInspectorPage() {
                     {focusDriver.tyre_age != null ? ` · ${focusDriver.tyre_age} laps` : ""}
                   </span>
                 </div>
+                <div className="metric-card">
+                  <span className="metric-label">Live Speed</span>
+                  <span className="metric-value">{focusDriver.current_speed_kmh ? `${Math.round(focusDriver.current_speed_kmh)} km/h` : "--"}</span>
+                </div>
+                <div className="metric-card">
+                  <span className="metric-label">Pit Count</span>
+                  <span className="metric-value">{focusDriver.pit_count ?? 0}</span>
+                </div>
+                <div className="metric-card">
+                  <span className="metric-label">Best Sectors</span>
+                  <span className="metric-value">
+                    {formatLap(focusDriver.best_sector_1_ms).replace(/^0:/, "")}
+                    {" / "}
+                    {formatLap(focusDriver.best_sector_2_ms).replace(/^0:/, "")}
+                    {" / "}
+                    {formatLap(focusDriver.best_sector_3_ms).replace(/^0:/, "")}
+                  </span>
+                </div>
+                <div className="metric-card">
+                  <span className="metric-label">Speed Trap</span>
+                  <span className="metric-value">{focusDriver.speed_trap_kmh ? `${Math.round(focusDriver.speed_trap_kmh)} km/h` : "--"}</span>
+                </div>
               </div>
             </>
           ) : null}
@@ -98,6 +121,11 @@ export function DriverInspectorPage() {
         <section className="inspector-card">
           <div className="inspector-kicker">Session Context</div>
           <TimingTower tower={tower} selectedDriver={selectedDriver} onSelectDriver={setSelectedDriver} />
+        </section>
+
+        <section className="inspector-card">
+          <div className="inspector-kicker">Radio Sync</div>
+          <TeamRadioFeed radios={radios} selectedDriver={selectedDriver} defaultMode="selected" />
         </section>
       </div>
     </div>
