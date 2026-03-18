@@ -79,7 +79,7 @@ function CircuitFlagMark({
     return (
       <img
         className={`${className} ${className}--image`}
-        src={context.country_flag}
+        src={resolveMediaUrl(context.country_flag)}
         alt={`${context.country_name || circuit} flag`}
         loading="lazy"
       />
@@ -106,7 +106,7 @@ function DriverLineup({ drivers }: { drivers: SessionDriverManifest[] }) {
             <img
               key={driver.number}
               className="nav-driver-avatar"
-              src={driver.headshot_url}
+              src={resolveMediaUrl(driver.headshot_url)}
               alt={driver.name || label}
               title={driver.name || label}
               loading="lazy"
@@ -248,6 +248,19 @@ const PREVIEW_BACKEND_HTTP =
   (import.meta.env.VITE_BACKEND_ORIGIN as string | undefined) ||
   (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000");
 
+function resolveMediaUrl(url: string | undefined): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+  if (url.startsWith("/")) {
+    return `${PREVIEW_BACKEND_HTTP}${url}`;
+  }
+  return url;
+}
+
 function CircuitTrackPreview({ sessionKeys, title }: { sessionKeys: number[]; title: string }) {
   const [points, setPoints] = useState<LayoutPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -339,6 +352,69 @@ function CircuitTrackPreview({ sessionKeys, title }: { sessionKeys: number[]; ti
         showCenterLine={false}
       />
       {loading && <span className="nav-circuit-track-status">Syncing layout</span>}
+    </div>
+  );
+}
+
+function CircuitPreviewMedia({
+  circuitImage,
+  circuitInfoUrl,
+  sessionKeys,
+  title,
+  compact = false,
+}: {
+  circuitImage?: string;
+  circuitInfoUrl?: string;
+  sessionKeys: number[];
+  title: string;
+  compact?: boolean;
+}) {
+  const containerClassName = compact ? "nav-circuit-preview nav-circuit-preview--card" : "nav-circuit-media-card";
+  const imageClassName = compact ? "nav-circuit-preview-image" : "nav-circuit-media-image";
+  const placeholderClassName = compact
+    ? "nav-circuit-preview-placeholder"
+    : "nav-circuit-media-placeholder";
+  const [imageFailed, setImageFailed] = useState(false);
+  const resolvedCircuitImage = imageFailed ? undefined : resolveMediaUrl(circuitImage);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [circuitImage]);
+
+  return (
+    <div className={containerClassName}>
+      {resolvedCircuitImage ? (
+        circuitInfoUrl ? (
+          <a href={circuitInfoUrl} target="_blank" rel="noreferrer" className="nav-circuit-media-link">
+            <img
+              className={imageClassName}
+              src={resolvedCircuitImage}
+              alt={title}
+              loading="lazy"
+              onError={() => setImageFailed(true)}
+            />
+          </a>
+        ) : (
+          <img
+            className={imageClassName}
+            src={resolvedCircuitImage}
+            alt={title}
+            loading="lazy"
+            onError={() => setImageFailed(true)}
+          />
+        )
+      ) : compact ? (
+        <div className={placeholderClassName}>
+          <CircuitTrackPreview sessionKeys={sessionKeys} title={title} />
+        </div>
+      ) : (
+        <div className={placeholderClassName}>Circuit guide</div>
+      )}
+      {!compact && circuitInfoUrl && (
+        <a href={circuitInfoUrl} target="_blank" rel="noreferrer" className="nav-circuit-media-cta">
+          Open circuit guide ↗
+        </a>
+      )}
     </div>
   );
 }
@@ -501,6 +577,7 @@ function YearView({ season, circuitPreviewKeys, onBack, onPickCircuit }: {
           const previewSourceKeys =
             circuitPreviewKeys.get(cg.circuit) ??
             cg.sessions.map((s) => s.session_key);
+          const circuitTitle = `${cg.gpName} circuit preview`;
           const sessionLabels = cg.sessions
             .map((s) => getTypeMeta(s))
             .filter((v, i, arr) => arr.findIndex((x) => x.label === v.label) === i)
@@ -515,7 +592,13 @@ function YearView({ season, circuitPreviewKeys, onBack, onPickCircuit }: {
                 <span className="nav-round-badge">R{round}</span>
                 {cg.hasSprint && <span className="nav-sprint-pill">Sprint</span>}
               </div>
-              <CircuitTrackPreview sessionKeys={previewSourceKeys} title={`${cg.gpName} circuit layout`} />
+              <CircuitPreviewMedia
+                compact
+                circuitImage={cg.meetingContext?.circuit_image}
+                circuitInfoUrl={cg.meetingContext?.circuit_info_url}
+                sessionKeys={previewSourceKeys}
+                title={circuitTitle}
+              />
               <CircuitFlagMark context={cg.meetingContext} circuit={cg.circuit} variant="card" />
               <div className="nav-circuit-gp">{cg.gpName}</div>
               <div className="nav-circuit-country">{country}</div>
@@ -606,34 +689,12 @@ function CircuitView({ circuitGroup, year, roundNum, onBack, onSelect }: {
           )}
         </div>
         {(circuitImage || circuitInfoUrl) && (
-          <div className="nav-circuit-media-card">
-            {circuitImage ? (
-              circuitInfoUrl ? (
-                <a href={circuitInfoUrl} target="_blank" rel="noreferrer" className="nav-circuit-media-link">
-                  <img
-                    className="nav-circuit-media-image"
-                    src={circuitImage}
-                    alt={`${circuitGroup.gpName} circuit preview`}
-                    loading="lazy"
-                  />
-                </a>
-              ) : (
-                <img
-                  className="nav-circuit-media-image"
-                  src={circuitImage}
-                  alt={`${circuitGroup.gpName} circuit preview`}
-                  loading="lazy"
-                />
-              )
-            ) : (
-              <div className="nav-circuit-media-placeholder">Circuit guide</div>
-            )}
-            {circuitInfoUrl && (
-              <a href={circuitInfoUrl} target="_blank" rel="noreferrer" className="nav-circuit-media-cta">
-                Open circuit guide ↗
-              </a>
-            )}
-          </div>
+          <CircuitPreviewMedia
+            circuitImage={circuitImage}
+            circuitInfoUrl={circuitInfoUrl}
+            sessionKeys={circuitGroup.sessions.map((session) => session.session_key)}
+            title={`${circuitGroup.gpName} circuit preview`}
+          />
         )}
         {circuitGroup.hasSprint && (
           <span className="nav-sprint-pill nav-sprint-pill--lg">Sprint Weekend</span>

@@ -16,10 +16,12 @@
     "location": "Mexico City",
     "country_code": "MEX",
     "country_name": "Mexico",
-    "country_flag": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Flags%2016x9/mexico-flag.png",
+    "country_flag": "/api/assets/country-flag_2025_1272_na_na_dd4c4c6c49.png?v=20260318142936",
     "circuit_type": "Permanent",
     "circuit_info_url": "https://api.multiviewer.app/api/v1/circuits/65/2025",
-    "circuit_image": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Track%20icons%204x3/Mexico%20carbon.png"
+    "circuit_image": "/api/assets/circuit-image_2025_1272_na_na_446562c042.png?v=20260318142936",
+    "country_flag_source_url": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Flags%2016x9/mexico-flag.png",
+    "circuit_image_source_url": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Track%20icons%204x3/Mexico%20carbon.png"
   },
   "drivers": [
     {
@@ -31,7 +33,8 @@
       "last_name": "Bortoleto",
       "team": "Kick Sauber",
       "team_color": "01C00E",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/G/GABBOR01_Gabriel_Bortoleto/gabbor01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2025_1272_na_5_3197e52d01.png?v=20260318142936",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/G/GABBOR01_Gabriel_Bortoleto/gabbor01.png.transform/1col/image.png"
     },
     {
       "number": 6,
@@ -42,7 +45,8 @@
       "last_name": "Hadjar",
       "team": "Racing Bulls",
       "team_color": "6C98FF",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/I/ISAHAD01_Isack_Hadjar/isahad01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2025_1272_na_6_cf339500d6.png?v=20260318142936",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/I/ISAHAD01_Isack_Hadjar/isahad01.png.transform/1col/image.png"
     },
     {
       "number": 12,
@@ -53,7 +57,8 @@
       "last_name": "Antonelli",
       "team": "Mercedes",
       "team_color": "00D7B6",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/A/ANDANT01_Andrea%20Kimi_Antonelli/andant01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2025_1272_na_12_ec6d283be1.png?v=20260318142936",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/A/ANDANT01_Andrea%20Kimi_Antonelli/andant01.png.transform/1col/image.png"
     },
     {
       "number": 14,
@@ -64,7 +69,8 @@
       "last_name": "Alonso",
       "team": "Aston Martin",
       "team_color": "229971",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/F/FERALO01_Fernando_Alonso/feralo01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2025_1272_na_14_219f03526f.png?v=20260318142936",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/F/FERALO01_Fernando_Alonso/feralo01.png.transform/1col/image.png"
     },
     {
       "number": 16,
@@ -75,7 +81,8 @@
       "last_name": "Leclerc",
       "team": "Ferrari",
       "team_color": "ED1131",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/C/CHALEC01_Charles_Leclerc/chalec01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2025_1272_na_16_5dbbaed2e1.png?v=20260318142936",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/C/CHALEC01_Charles_Leclerc/chalec01.png.transform/1col/image.png"
     },
     {
       "number": 22,
@@ -86,7 +93,8 @@
       "last_name": "Tsunoda",
       "team": "Red Bull Racing",
       "team_color": "4781D7",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/Y/YUKTSU01_Yuki_Tsunoda/yuktsu01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2025_1272_na_22_4b3809a12d.png?v=20260318142936",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/Y/YUKTSU01_Yuki_Tsunoda/yuktsu01.png.transform/1col/image.png"
     },
     {
       "number": 23,
@@ -97,7 +105,8 @@
       "last_name": "Albon",
       "team": "Williams",
       "team_color": "1868DB",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/A/ALEALB01_Alexander_Albon/alealb01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2025_1272_na_23_1bd1cdc204.png?v=20260318142936",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/A/ALEALB01_Alexander_Albon/alealb01.png.transform/1col/image.png"
     },
     {
       "number": 27,
@@ -108,7 +117,8 @@
       "last_name": "Hulkenberg",
       "team": "Kick Sauber",
       "team_color": "01C00E",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/N/NICHUL01_Nico_Hulkenberg/nichul01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2025_1272_na_27_db5c155449.png?v=20260318142936",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/N/NICHUL01_Nico_Hulkenberg/nichul01.png.transform/1col/image.png"
     },
     {
       "number": 31,
@@ -119,7 +129,8 @@
       "last_name": "Ocon",
       "team": "Haas F1 Team",
       "team_color": "9C9FA2",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/E/ESTOCO01_Esteban_Ocon/estoco01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2025_1272_na_31_f9c4524cff.png?v=20260318142936",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/E/ESTOCO01_Esteban_Ocon/estoco01.png.transform/1col/image.png"
     },
     {
       "number": 35,
@@ -220,7 +231,8 @@
       "last_name": "Piastri",
       "team": "McLaren",
       "team_color": "F47600",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/O/OSCPIA01_Oscar_Piastri/oscpia01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2025_1272_na_81_3c0a71c272.png?v=20260318142936",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/O/OSCPIA01_Oscar_Piastri/oscpia01.png.transform/1col/image.png"
     },
     {
       "number": 89,

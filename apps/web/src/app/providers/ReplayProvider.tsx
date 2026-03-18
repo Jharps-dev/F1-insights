@@ -51,6 +51,7 @@ interface ReplayContextValue {
 }
 
 const ReplayContext = createContext<ReplayContextValue | null>(null);
+const SESSION_POLL_MS = 5 * 60 * 1000;
 
 async function getApiErrorMessage(response: Response, fallback: string): Promise<string> {
   let body = "";
@@ -121,28 +122,65 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
   const layoutRequestIdRef = useRef(0);
 
   useEffect(() => {
-    const controller = new AbortController();
-    setSessionsLoading(true);
-    setSessionsError(null);
-    fetch(`${backendHttp}/api/sessions`, { signal: controller.signal })
-      .then(async (response) => {
+    let disposed = false;
+    let currentController: AbortController | null = null;
+
+    const loadSessions = async (initial: boolean) => {
+      currentController?.abort();
+      const controller = new AbortController();
+      currentController = controller;
+
+      if (initial) {
+        setSessionsLoading(true);
+        setSessionsError(null);
+      }
+
+      try {
+        const response = await fetch(`${backendHttp}/api/sessions`, { signal: controller.signal });
         if (!response.ok) {
           throw new Error(await getApiErrorMessage(response, "Failed to load sessions"));
         }
-        return response.json();
-      })
-      .then((data: SessionManifest[]) => setSessions(data))
-      .catch((err) => {
-        if (controller.signal.aborted) {
+        const data = (await response.json()) as SessionManifest[];
+        if (!disposed) {
+          setSessions(data);
+          setSessionsError(null);
+        }
+      } catch (err) {
+        if (controller.signal.aborted || disposed) {
           return;
         }
-        setSessions([]);
+        if (initial) {
+          setSessions([]);
+        }
         setSessionsError(err instanceof Error ? err.message : "Failed to load sessions");
-      })
-      .finally(() => setSessionsLoading(false));
+      } finally {
+        if (!disposed && initial) {
+          setSessionsLoading(false);
+        }
+      }
+    };
 
-    return () => controller.abort();
+    void loadSessions(true);
+    const intervalId = window.setInterval(() => {
+      void loadSessions(false);
+    }, SESSION_POLL_MS);
+
+    return () => {
+      disposed = true;
+      currentController?.abort();
+      window.clearInterval(intervalId);
+    };
   }, [backendHttp]);
+
+  useEffect(() => {
+    if (!activeSession) {
+      return;
+    }
+    const refreshed = sessions.find((session) => session.session_key === activeSession.session_key);
+    if (refreshed) {
+      setActiveSession(refreshed);
+    }
+  }, [activeSession, sessions]);
 
   const refreshLiveStatus = useCallback(async () => {
     try {

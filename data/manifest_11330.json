@@ -16,10 +16,12 @@
     "location": "Spa-Francorchamps",
     "country_code": "BEL",
     "country_name": "Belgium",
-    "country_flag": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Flags%2016x9/belgium-flag.png",
+    "country_flag": "/api/assets/country-flag_2026_1290_na_na_f8301a6e21.png?v=20260318142920",
     "circuit_type": "Temporary - Road",
     "circuit_info_url": "https://api.multiviewer.app/api/v1/circuits/7/2026",
-    "circuit_image": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Track%20icons%204x3/Belgium%20carbon.png"
+    "circuit_image": "/api/assets/circuit-image_2026_1290_na_na_5dd80c78f1.png?v=20260318142920",
+    "country_flag_source_url": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Flags%2016x9/belgium-flag.png",
+    "circuit_image_source_url": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Track%20icons%204x3/Belgium%20carbon.png"
   },
   "drivers": [
     {
@@ -31,7 +33,8 @@
       "last_name": "Norris",
       "team": "McLaren",
       "team_color": "F47600",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/L/LANNOR01_Lando_Norris/lannor01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_1_405abfc5c5.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/L/LANNOR01_Lando_Norris/lannor01.png.transform/1col/image.png"
     },
     {
       "number": 3,
@@ -42,7 +45,8 @@
       "last_name": "Verstappen",
       "team": "Red Bull Racing",
       "team_color": "4781D7",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/M/MAXVER01_Max_Verstappen/maxver01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_3_a16a7c0c8f.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/M/MAXVER01_Max_Verstappen/maxver01.png.transform/1col/image.png"
     },
     {
       "number": 5,
@@ -53,7 +57,8 @@
       "last_name": "Bortoleto",
       "team": "Audi",
       "team_color": "F50537",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/G/GABBOR01_Gabriel_Bortoleto/gabbor01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_5_3197e52d01.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/G/GABBOR01_Gabriel_Bortoleto/gabbor01.png.transform/1col/image.png"
     },
     {
       "number": 6,
@@ -64,7 +69,8 @@
       "last_name": "Hadjar",
       "team": "Red Bull Racing",
       "team_color": "4781D7",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/I/ISAHAD01_Isack_Hadjar/isahad01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_6_cf339500d6.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/I/ISAHAD01_Isack_Hadjar/isahad01.png.transform/1col/image.png"
     },
     {
       "number": 10,
@@ -75,7 +81,8 @@
       "last_name": "Gasly",
       "team": "Alpine",
       "team_color": "00A1E8",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/P/PIEGAS01_Pierre_Gasly/piegas01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_10_c5f6dbfe79.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/P/PIEGAS01_Pierre_Gasly/piegas01.png.transform/1col/image.png"
     },
     {
       "number": 11,
@@ -86,7 +93,8 @@
       "last_name": "Perez",
       "team": "Cadillac",
       "team_color": "909090",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/S/SERPER01_Sergio_Perez/serper01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_11_9a45590759.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/S/SERPER01_Sergio_Perez/serper01.png.transform/1col/image.png"
     },
     {
       "number": 12,
@@ -97,7 +105,8 @@
       "last_name": "Antonelli",
       "team": "Mercedes",
       "team_color": "00D7B6",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/K/ANDANT01_Kimi_Antonelli/andant01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_12_773864ff98.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/K/ANDANT01_Kimi_Antonelli/andant01.png.transform/1col/image.png"
     },
     {
       "number": 14,
@@ -108,7 +117,8 @@
       "last_name": "Alonso",
       "team": "Aston Martin",
       "team_color": "229971",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/F/FERALO01_Fernando_Alonso/feralo01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_14_219f03526f.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/F/FERALO01_Fernando_Alonso/feralo01.png.transform/1col/image.png"
     },
     {
       "number": 16,
@@ -119,7 +129,8 @@
       "last_name": "Leclerc",
       "team": "Ferrari",
       "team_color": "ED1131",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/C/CHALEC01_Charles_Leclerc/chalec01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_16_5dbbaed2e1.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/C/CHALEC01_Charles_Leclerc/chalec01.png.transform/1col/image.png"
     },
     {
       "number": 18,
@@ -130,7 +141,8 @@
       "last_name": "Stroll",
       "team": "Aston Martin",
       "team_color": "229971",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/L/LANSTR01_Lance_Stroll/lanstr01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_18_15d643b41e.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/L/LANSTR01_Lance_Stroll/lanstr01.png.transform/1col/image.png"
     },
     {
       "number": 23,
@@ -141,7 +153,8 @@
       "last_name": "Albon",
       "team": "Williams",
       "team_color": "1868DB",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/A/ALEALB01_Alexander_Albon/alealb01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_23_1bd1cdc204.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/A/ALEALB01_Alexander_Albon/alealb01.png.transform/1col/image.png"
     },
     {
       "number": 27,
@@ -152,7 +165,8 @@
       "last_name": "Hulkenberg",
       "team": "Audi",
       "team_color": "F50537",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/N/NICHUL01_Nico_Hulkenberg/nichul01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_27_db5c155449.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/N/NICHUL01_Nico_Hulkenberg/nichul01.png.transform/1col/image.png"
     },
     {
       "number": 30,
@@ -163,7 +177,8 @@
       "last_name": "Lawson",
       "team": "Racing Bulls",
       "team_color": "6C98FF",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/L/LIALAW01_Liam_Lawson/lialaw01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_30_c6de60e3a5.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/L/LIALAW01_Liam_Lawson/lialaw01.png.transform/1col/image.png"
     },
     {
       "number": 31,
@@ -174,7 +189,8 @@
       "last_name": "Ocon",
       "team": "Haas F1 Team",
       "team_color": "9C9FA2",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/E/ESTOCO01_Esteban_Ocon/estoco01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_31_f9c4524cff.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/E/ESTOCO01_Esteban_Ocon/estoco01.png.transform/1col/image.png"
     },
     {
       "number": 41,
@@ -185,7 +201,8 @@
       "last_name": "Lindblad",
       "team": "Racing Bulls",
       "team_color": "6C98FF",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/A/ARVLIN01_Arvid_Lindblad/arvlin01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_41_f119a0f28a.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/A/ARVLIN01_Arvid_Lindblad/arvlin01.png.transform/1col/image.png"
     },
     {
       "number": 43,
@@ -196,7 +213,8 @@
       "last_name": "Colapinto",
       "team": "Alpine",
       "team_color": "00A1E8",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/F/FRACOL01_Franco_Colapinto/fracol01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_43_00f2fdd691.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/F/FRACOL01_Franco_Colapinto/fracol01.png.transform/1col/image.png"
     },
     {
       "number": 44,
@@ -207,7 +225,8 @@
       "last_name": "Hamilton",
       "team": "Ferrari",
       "team_color": "ED1131",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/L/LEWHAM01_Lewis_Hamilton/lewham01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_44_45a1be0d2d.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/L/LEWHAM01_Lewis_Hamilton/lewham01.png.transform/1col/image.png"
     },
     {
       "number": 55,
@@ -218,7 +237,8 @@
       "last_name": "Sainz",
       "team": "Williams",
       "team_color": "1868DB",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/C/CARSAI01_Carlos_Sainz/carsai01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_55_232884dcd6.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/C/CARSAI01_Carlos_Sainz/carsai01.png.transform/1col/image.png"
     },
     {
       "number": 63,
@@ -229,7 +249,8 @@
       "last_name": "Russell",
       "team": "Mercedes",
       "team_color": "00D7B6",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/G/GEORUS01_George_Russell/georus01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_63_58ad72f29d.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/G/GEORUS01_George_Russell/georus01.png.transform/1col/image.png"
     },
     {
       "number": 77,
@@ -240,7 +261,8 @@
       "last_name": "Bottas",
       "team": "Cadillac",
       "team_color": "909090",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/V/VALBOT01_Valtteri_Bottas/valbot01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_77_88ed7b2ed3.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/V/VALBOT01_Valtteri_Bottas/valbot01.png.transform/1col/image.png"
     },
     {
       "number": 81,
@@ -251,7 +273,8 @@
       "last_name": "Piastri",
       "team": "McLaren",
       "team_color": "F47600",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/O/OSCPIA01_Oscar_Piastri/oscpia01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_81_3c0a71c272.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/O/OSCPIA01_Oscar_Piastri/oscpia01.png.transform/1col/image.png"
     },
     {
       "number": 87,
@@ -262,7 +285,8 @@
       "last_name": "Bearman",
       "team": "Haas F1 Team",
       "team_color": "9C9FA2",
-      "headshot_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/O/OLIBEA01_Oliver_Bearman/olibea01.png.transform/1col/image.png"
+      "headshot_url": "/api/assets/driver-headshot_2026_1290_na_87_9c48ddc44c.png?v=20260318142920",
+      "headshot_source_url": "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/O/OLIBEA01_Oliver_Bearman/olibea01.png.transform/1col/image.png"
     }
   ],
   "source_priority": [

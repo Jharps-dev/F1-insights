@@ -16,10 +16,12 @@
     "location": "Imola",
     "country_code": "ITA",
     "country_name": "Italy",
-    "country_flag": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Flags%2016x9/italy-flag.png",
+    "country_flag": "/api/assets/country-flag_2023_1209_na_na_c41d3577f3.png?v=20260318142926",
     "circuit_type": "Permanent",
     "circuit_info_url": "https://api.multiviewer.app/api/v1/circuits/6/2023",
-    "circuit_image": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Track%20icons%204x3/Emilia-Romagna%20carbon.png"
+    "circuit_image": "/api/assets/circuit-image_2023_1209_na_na_2c9532647a.png?v=20260318142926",
+    "country_flag_source_url": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Flags%2016x9/italy-flag.png",
+    "circuit_image_source_url": "https://media.formula1.com/content/dam/fom-website/2018-redesign-assets/Track%20icons%204x3/Emilia-Romagna%20carbon.png"
   },
   "drivers": [],
   "source_priority": [

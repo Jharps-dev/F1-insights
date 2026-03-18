@@ -215,9 +215,11 @@ export interface SessionManifest {
     country_code?: string;
     country_name?: string;
     country_flag?: string;
+    country_flag_source_url?: string;
     circuit_type?: string;
     circuit_info_url?: string;
     circuit_image?: string;
+    circuit_image_source_url?: string;
   };
   starting_grid?: StartingGridEntry[];
 
@@ -232,6 +234,7 @@ export interface SessionManifest {
     team?: string;
     team_color?: string;
     headshot_url?: string;
+    headshot_source_url?: string;
     country_code?: string;
   }>;
 

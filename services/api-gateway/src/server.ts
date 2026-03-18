@@ -7,9 +7,16 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { config as loadEnv } from "dotenv";
 import { ReplayService } from "@f1-insights/replay-orchestrator";
-import { CanonicalEvent } from "@f1-insights/schemas";
+import { CanonicalEvent, SessionManifest } from "@f1-insights/schemas";
 import { OpenF1LiveIngest } from "@f1-insights/ingest-openf1";
-import { backfillOpenF1Manifests, importOpenF1Session, type ImportProfile } from "@f1-insights/ingest-openf1";
+import {
+  ASSET_DIR_NAME,
+  DEFAULT_ASSET_STALE_MS,
+  backfillOpenF1Manifests,
+  importOpenF1Session,
+  mirrorSessionManifestAssets,
+  type ImportProfile,
+} from "@f1-insights/ingest-openf1";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +42,8 @@ const port = parsePositiveIntEnv(process.env.PORT, 3000);
 // Resolve DATA_DIR relative to repo root so `./data` works regardless of cwd
 const rawDataDir = process.env.DATA_DIR || "data";
 const dataDir = path.isAbsolute(rawDataDir) ? rawDataDir : path.join(repoRoot, rawDataDir);
+const assetAutoRefresh = process.env.ASSET_AUTO_REFRESH !== "0";
+const assetRefreshIntervalMs = parsePositiveIntEnv(process.env.ASSET_REFRESH_INTERVAL_HOURS, 12) * 60 * 60 * 1000;
 const persistLiveEvents = process.env.LIVE_PERSIST_EVENTS === "1";
 const liveMaxFileBytes = parsePositiveIntEnv(process.env.LIVE_MAX_FILE_MB, 256) * 1024 * 1024;
 const wsMaxPayloadBytes = parsePositiveIntEnv(process.env.WS_MAX_PAYLOAD_KB, 256) * 1024;
@@ -55,6 +64,83 @@ interface LayoutManifest {
   circuit_short_name?: string;
   date_start_utc?: string;
   drivers?: Array<{ number?: number }>;
+}
+
+let assetRefreshPromise: Promise<void> | null = null;
+
+function manifestsEqual(a: SessionManifest, b: SessionManifest): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+async function refreshManifestAssets(manifestPath: string, options: { force?: boolean } = {}): Promise<boolean> {
+  const manifest = await readJsonFile<SessionManifest>(manifestPath);
+  if (!manifest) {
+    return false;
+  }
+
+  const mirroredManifest = await mirrorSessionManifestAssets(manifest, dataDir, {
+    force: options.force,
+    staleAfterMs: DEFAULT_ASSET_STALE_MS,
+  });
+
+  if (manifestsEqual(manifest, mirroredManifest)) {
+    return false;
+  }
+
+  await fs.writeFile(manifestPath, JSON.stringify(mirroredManifest, null, 2), "utf8");
+  return true;
+}
+
+async function refreshAllManifestAssets(options: { force?: boolean } = {}): Promise<void> {
+  if (assetRefreshPromise) {
+    return assetRefreshPromise;
+  }
+
+  assetRefreshPromise = (async () => {
+    try {
+      const files = await fs.readdir(dataDir);
+      const manifestFiles = files
+        .filter((fileName) => fileName.startsWith("manifest_") && fileName.endsWith(".json"))
+        .map((fileName) => path.join(dataDir, fileName))
+        .sort((a, b) => a.localeCompare(b));
+
+      let updated = 0;
+      for (const manifestPath of manifestFiles) {
+        if (await refreshManifestAssets(manifestPath, options)) {
+          updated += 1;
+        }
+      }
+
+      if (updated > 0) {
+        console.log(`[ASSETS] Refreshed media for ${updated} manifest(s)`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("ENOENT")) {
+        console.error("[ASSETS] Refresh sweep failed:", err);
+      }
+    } finally {
+      assetRefreshPromise = null;
+    }
+  })();
+
+  return assetRefreshPromise;
+}
+
+function scheduleAssetRefreshSweep(): void {
+  if (!assetAutoRefresh) {
+    return;
+  }
+
+  const initialTimer = setTimeout(() => {
+    void refreshAllManifestAssets();
+  }, 10_000);
+  initialTimer.unref?.();
+
+  const interval = setInterval(() => {
+    void refreshAllManifestAssets();
+  }, assetRefreshIntervalMs);
+  interval.unref?.();
 }
 
 function isLayoutPointArray(value: unknown): value is LayoutPoint[] {
@@ -166,10 +252,20 @@ async function writeImportedDataset(outputDir: string, sessionKey: number, event
   const manifestPath = path.join(outputDir, `manifest_${sessionKey}.json`);
   const eventsJsonl = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
   await fs.writeFile(eventsPath, eventsJsonl, "utf8");
-  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+  const mirroredManifest = await mirrorSessionManifestAssets(manifest as SessionManifest, outputDir);
+  await fs.writeFile(manifestPath, JSON.stringify(mirroredManifest, null, 2), "utf8");
 }
 
 app.use(express.json({ limit: "256kb" }));
+app.use(
+  "/api/assets",
+  express.static(path.join(dataDir, ASSET_DIR_NAME), {
+    fallthrough: true,
+    setHeaders: (res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    },
+  })
+);
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   if (err instanceof SyntaxError && "body" in (err as object)) {
     return res.status(400).json({ error: "Invalid JSON request body" });
@@ -470,6 +566,9 @@ app.post("/api/live/stop", async (req, res) => {
 // List available sessions
 app.get("/api/sessions", async (req, res) => {
   try {
+    if (assetAutoRefresh && !assetRefreshPromise) {
+      void refreshAllManifestAssets();
+    }
     const files = await fs.readdir(dataDir);
     const manifests = await Promise.all(
       files
@@ -726,6 +825,8 @@ server.listen(port, () => {
     console.log(`  API only on :${port}\n`);
   }
 });
+
+scheduleAssetRefreshSweep();
 
 // Graceful shutdown
 let shuttingDown = false;

@@ -6,9 +6,11 @@ export interface SessionMeetingContext {
   country_code?: string;
   country_name?: string;
   country_flag?: string;
+  country_flag_source_url?: string;
   circuit_type?: string;
   circuit_info_url?: string;
   circuit_image?: string;
+  circuit_image_source_url?: string;
 }
 
 export interface SessionDriverManifest {
@@ -21,6 +23,7 @@ export interface SessionDriverManifest {
   team?: string;
   team_color?: string;
   headshot_url?: string;
+  headshot_source_url?: string;
   country_code?: string;
 }
 

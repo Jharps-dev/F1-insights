@@ -12,6 +12,7 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { CanonicalEvent, CANONICAL_SCHEMA_VERSION, SessionManifest } from "@f1-insights/schemas";
+import { mirrorSessionManifestAssets } from "./assets";
 
 const BASE_URL = "https://api.openf1.org/v1";
 const CACHE_DIR = process.env.CACHE_DIR || ".cache/openf1";
@@ -150,9 +151,11 @@ function buildMeetingContext(meetingData: any): SessionManifest["meeting_context
     country_code: typeof meetingData.country_code === "string" ? meetingData.country_code : undefined,
     country_name: typeof meetingData.country_name === "string" ? meetingData.country_name : undefined,
     country_flag: typeof meetingData.country_flag === "string" ? meetingData.country_flag : undefined,
+    country_flag_source_url: typeof meetingData.country_flag === "string" ? meetingData.country_flag : undefined,
     circuit_type: typeof meetingData.circuit_type === "string" ? meetingData.circuit_type : undefined,
     circuit_info_url: typeof meetingData.circuit_info_url === "string" ? meetingData.circuit_info_url : undefined,
     circuit_image: typeof meetingData.circuit_image === "string" ? meetingData.circuit_image : undefined,
+    circuit_image_source_url: typeof meetingData.circuit_image === "string" ? meetingData.circuit_image : undefined,
   };
 }
 
@@ -236,6 +239,7 @@ async function fetchSessionMetadata(sessionKey: number): Promise<SessionMetadata
         team: typeof row.team_name === "string" ? row.team_name : undefined,
         team_color: typeof row.team_colour === "string" ? row.team_colour : undefined,
         headshot_url: typeof row.headshot_url === "string" ? row.headshot_url : undefined,
+        headshot_source_url: typeof row.headshot_url === "string" ? row.headshot_url : undefined,
         country_code: typeof row.country_code === "string" ? row.country_code : undefined,
       });
     }
@@ -800,8 +804,12 @@ export async function backfillOpenF1Manifest(
     (driver) => !driver.broadcast_name || !driver.headshot_url || !driver.country_code
   );
   const needsStartingGrid = !existingManifest.starting_grid || existingManifest.starting_grid.length === 0;
+  const needsAssetMirror =
+    Boolean(existingManifest.meeting_context?.country_flag && /^https?:\/\//i.test(existingManifest.meeting_context.country_flag)) ||
+    Boolean(existingManifest.meeting_context?.circuit_image && /^https?:\/\//i.test(existingManifest.meeting_context.circuit_image)) ||
+    existingManifest.drivers.some((driver) => Boolean(driver.headshot_url && /^https?:\/\//i.test(driver.headshot_url)));
 
-  if (!options.force && !needsMeetingContext && !needsDriverEnrichment && !needsStartingGrid) {
+  if (!options.force && !needsMeetingContext && !needsDriverEnrichment && !needsStartingGrid && !needsAssetMirror) {
     return { updated: false, sessionKey, manifest: existingManifest };
   }
 
@@ -816,9 +824,12 @@ export async function backfillOpenF1Manifest(
     startingGrid,
     existingManifest,
   });
+  const mirroredManifest = await mirrorSessionManifestAssets(manifest, path.dirname(manifestPath), {
+    force: options.force,
+  });
 
-  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
-  return { updated: true, sessionKey, manifest };
+  await fs.writeFile(manifestPath, JSON.stringify(mirroredManifest, null, 2), "utf8");
+  return { updated: true, sessionKey, manifest: mirroredManifest };
 }
 
 export async function backfillOpenF1Manifests(

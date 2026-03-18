@@ -6,7 +6,9 @@
 
 import fs from "fs/promises";
 import path from "path";
+import type { SessionManifest } from "@f1-insights/schemas";
 import { backfillOpenF1Manifests, importOpenF1Session, listOpenF1Sessions, type ImportProfile } from "./importer";
+import { mirrorSessionManifestAssets } from "./assets";
 
 function getArgValue(args: string[], key: string): string | undefined {
   const idx = args.indexOf(key);
@@ -40,8 +42,9 @@ async function writeImportedSession(outputDir: string, sessionKey: number, event
   const eventsJsonl = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
   await fs.writeFile(eventsPath, eventsJsonl, "utf8");
 
+  const mirroredManifest = await mirrorSessionManifestAssets(manifest as SessionManifest, outputDir);
   const manifestPath = path.join(outputDir, `manifest_${sessionKey}.json`);
-  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+  await fs.writeFile(manifestPath, JSON.stringify(mirroredManifest, null, 2), "utf8");
 
   return { eventsPath, manifestPath };
 }
