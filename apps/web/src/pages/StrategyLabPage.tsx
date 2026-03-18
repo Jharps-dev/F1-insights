@@ -10,6 +10,12 @@ function fmtMs(ms?: number | null): string {
   return mins > 0 ? `${mins}:${secs}` : secs;
 }
 
+function fmtInterval(ms?: number | null): string {
+  if (ms == null) return "--";
+  if (ms === 0) return "0.000s";
+  return `${(ms / 1000).toFixed(3)}s`;
+}
+
 export function StrategyLabPage() {
   const navigate = useNavigate();
   const { activeSession, tower, stints, insights } = useReplay();
@@ -70,7 +76,7 @@ export function StrategyLabPage() {
             ) : closestBattle ? (
               <div className="strategy-highlight">
                 <div className="strategy-highlight-title">
-                  {closestBattle.code} is {closestBattle.interval_to_ahead_ms} ms behind the car ahead
+                  {closestBattle.code} is {fmtInterval(closestBattle.interval_to_ahead_ms)} behind the car ahead
                 </div>
                 <p className="strategy-highlight-copy">
                   Interval history has not formed yet. Once a few timed laps accumulate, this panel becomes stable gaining-losing analysis rather than a single snapshot.
@@ -94,7 +100,7 @@ export function StrategyLabPage() {
                         {driver?.code || stint.driver_number} stint {stint.stint_number}
                       </span>
                       <span className="list-row-meta">
-                        {stint.tyre_compound} · avg {fmtMs(stint.pace_mean_ms)} · deg {stint.degradation_rate ?? 0} ms/lap
+                        {stint.tyre_compound} · avg {fmtMs(stint.pace_mean_ms)} · deg {stint.degradation_rate ?? "--"} ms/lap
                       </span>
                     </div>
                   );

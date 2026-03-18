@@ -119,6 +119,12 @@ liveIngest.on("error", (err) => {
 wss.on("connection", async (ws) => {
   console.log("[WS] Client connected");
 
+  const sendError = (message: string) => {
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: "error", message }));
+    }
+  };
+
   // Subscribe to replay state updates
   const unsubscribe = replayService.subscribe((msg) => {
     if (ws.readyState === 1) {
@@ -130,10 +136,26 @@ wss.on("connection", async (ws) => {
   ws.on("message", (data) => {
     try {
       const message = JSON.parse(data.toString());
-      console.log("[WS] Message:", message.op);
+      if (!message || typeof message !== "object") {
+        sendError("Invalid message payload: expected JSON object");
+        return;
+      }
 
-      switch (message.op) {
+      const op = typeof message.op === "string" ? message.op : "";
+      if (!op) {
+        sendError("Missing operation 'op'");
+        return;
+      }
+
+      console.log("[WS] Message:", op);
+
+      switch (op) {
         case "load_session": {
+          if (typeof message.sessionKey !== "string" && typeof message.sessionKey !== "number") {
+            sendError("load_session requires 'sessionKey' as string or number");
+            break;
+          }
+
           replayService
             .loadSession(message.sessionKey)
             .then(() => {
@@ -153,26 +175,48 @@ wss.on("connection", async (ws) => {
             });
           break;
         }
-        case "play":
-          replayService.start(message.tickRateHz || 10);
+        case "play": {
+          const requestedTickRate =
+            typeof message.tickRateHz === "number" && Number.isFinite(message.tickRateHz)
+              ? message.tickRateHz
+              : 10;
+          const tickRateHz = Math.max(1, Math.min(60, Math.floor(requestedTickRate)));
+          replayService.start(tickRateHz);
           break;
+        }
         case "pause":
           replayService.pause();
           break;
-        case "seek":
-          replayService.seek(message.replayTimeMs || 0);
+        case "seek": {
+          if (typeof message.replayTimeMs !== "number" || !Number.isFinite(message.replayTimeMs)) {
+            sendError("seek requires numeric 'replayTimeMs'");
+            break;
+          }
+          const replayTimeMs = Math.max(0, Math.floor(message.replayTimeMs));
+          replayService.seek(replayTimeMs);
           break;
+        }
         case "speed": {
-          const speed = typeof message.speed === "number" ? message.speed : 1.0;
+          if (typeof message.speed !== "number" || !Number.isFinite(message.speed)) {
+            sendError("speed requires numeric 'speed'");
+            break;
+          }
+          const speed = Math.max(0.1, Math.min(16, Number(message.speed.toFixed(2))));
           replayService.setSpeed(speed);
           ws.send(JSON.stringify({ type: "speed_set", speed }));
           break;
         }
         default:
-          console.warn("[WS] Unknown op:", message.op);
+          console.warn("[WS] Unknown op:", op);
+          sendError(`Unknown operation '${op}'`);
       }
     } catch (err) {
-      console.error("[WS] Error:", err);
+      if (err instanceof SyntaxError) {
+        console.warn("[WS] Malformed JSON message");
+      } else {
+        console.error("[WS] Error:", err);
+      }
+      sendError("Malformed JSON message");
     }
   });
 
@@ -220,7 +264,7 @@ app.get("/api/live/status", (req, res) => {
 // On-demand backfill import
 app.post("/api/sessions/:key/import", async (req, res) => {
   const sessionKey = Number(req.params.key);
-  if (!sessionKey) {
+  if (!Number.isInteger(sessionKey) || sessionKey <= 0) {
     return res.status(400).json({ error: "Invalid session key" });
   }
 
@@ -247,8 +291,12 @@ app.post("/api/sessions/:key/import", async (req, res) => {
 app.post("/api/live/start", async (req, res) => {
   try {
     const sessionKey = Number(req.body?.sessionKey || process.env.OPENF1_LIVE_SESSION_KEY || 0);
-    if (!sessionKey) {
+    if (!Number.isInteger(sessionKey) || sessionKey <= 0) {
       return res.status(400).json({ error: "sessionKey is required" });
+    }
+
+    if (liveIngest.getStatus().connected) {
+      await liveIngest.stop();
     }
 
     liveSessionKey = sessionKey;
@@ -303,6 +351,10 @@ app.get("/api/sessions", async (req, res) => {
     });
     res.json(sorted);
   } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    if (message.includes("ENOENT")) {
+      return res.json([]);
+    }
     res.status(500).json({ error: "Failed to list sessions" });
   }
 });
@@ -337,6 +389,12 @@ app.get("/api/calendar/diff", async (req, res) => {
   const toYear = Number(req.query.to);
   if (!Number.isFinite(fromYear) || !Number.isFinite(toYear)) {
     return res.status(400).json({ error: "Query params 'from' and 'to' are required" });
+  }
+  if (fromYear < 2020 || fromYear > 2100 || toYear < 2020 || toYear > 2100) {
+    return res.status(400).json({ error: "Years must be between 2020 and 2100" });
+  }
+  if (fromYear === toYear) {
+    return res.status(400).json({ error: "'from' and 'to' years must differ" });
   }
 
   try {

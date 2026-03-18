@@ -72,7 +72,8 @@ async function runHttpSmoke() {
   return checks;
 }
 
-function waitFor(ws, predicate, description, timeoutMs) {
+function waitFor(ws, predicate, description, timeoutMs, options = {}) {
+  const { allowErrorMessages = false } = options;
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       ws.off("message", onMessage);
@@ -87,7 +88,7 @@ function waitFor(ws, predicate, description, timeoutMs) {
         return;
       }
 
-      if (msg?.type === "error") {
+      if (msg?.type === "error" && !allowErrorMessages) {
         clearTimeout(timeoutId);
         ws.off("message", onMessage);
         reject(new Error(`Server reported error while waiting for ${description}: ${msg.message || "unknown"}`));
@@ -112,6 +113,13 @@ async function runWsSmoke() {
     sessionLoaded: false,
     stateDeltaCount: 0,
     speedAck: false,
+    negativeChecks: {
+      unknownOpError: false,
+      invalidSeekError: false,
+      malformedJsonError: false,
+      speedClamped: false,
+      tickRateClamped: false,
+    },
   };
 
   await new Promise((resolve, reject) => {
@@ -140,6 +148,24 @@ async function runWsSmoke() {
   await waitFor(ws, (msg) => msg?.type === "speed_set" && msg?.speed === 1.5, "speed_set", WS_TIMEOUT_MS);
   wsSummary.speedAck = true;
 
+  ws.send(JSON.stringify({ op: "speed", speed: 100 }));
+  const clampedSpeed = await waitFor(ws, (msg) => msg?.type === "speed_set", "clamped speed_set", WS_TIMEOUT_MS);
+  wsSummary.negativeChecks.speedClamped = clampedSpeed?.speed === 16;
+
+  ws.send(JSON.stringify({ op: "play", tickRateHz: 999 }));
+  await waitFor(
+    ws,
+    (msg) => {
+      if (msg?.type === "state_delta") {
+        wsSummary.stateDeltaCount += 1;
+      }
+      return wsSummary.stateDeltaCount >= 1;
+    },
+    "state_delta after clamped play tick rate",
+    WS_TIMEOUT_MS
+  );
+  wsSummary.negativeChecks.tickRateClamped = true;
+
   ws.send(JSON.stringify({ op: "play", tickRateHz: 10 }));
   await waitFor(
     ws,
@@ -156,6 +182,41 @@ async function runWsSmoke() {
   ws.send(JSON.stringify({ op: "seek", replayTimeMs: 5000 }));
   await waitFor(ws, (msg) => msg?.type === "state_delta", "state_delta after seek", WS_TIMEOUT_MS);
   wsSummary.stateDeltaCount += 1;
+
+  ws.send(JSON.stringify({ op: "seek", replayTimeMs: "bad" }));
+  await waitFor(
+    ws,
+    (msg) => msg?.type === "error" && String(msg?.message || "").includes("seek requires numeric 'replayTimeMs'"),
+    "error for invalid seek payload",
+    WS_TIMEOUT_MS,
+    { allowErrorMessages: true }
+  );
+  wsSummary.negativeChecks.invalidSeekError = true;
+
+  ws.send(JSON.stringify({ op: "not_real_op" }));
+  await waitFor(
+    ws,
+    (msg) => msg?.type === "error" && String(msg?.message || "").includes("Unknown operation"),
+    "error for unknown op",
+    WS_TIMEOUT_MS,
+    { allowErrorMessages: true }
+  );
+  wsSummary.negativeChecks.unknownOpError = true;
+
+  ws.send("{not-json");
+  await waitFor(
+    ws,
+    (msg) => msg?.type === "error" && String(msg?.message || "").includes("Malformed JSON"),
+    "error for malformed JSON",
+    WS_TIMEOUT_MS,
+    { allowErrorMessages: true }
+  );
+  wsSummary.negativeChecks.malformedJsonError = true;
+
+  assert(
+    Object.values(wsSummary.negativeChecks).every(Boolean),
+    "WebSocket negative checks failed"
+  );
 
   ws.send(JSON.stringify({ op: "pause" }));
   ws.close();

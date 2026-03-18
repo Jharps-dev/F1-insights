@@ -12,6 +12,17 @@ function formatLap(ms?: number | null): string {
   return `${minutes}:${seconds}`;
 }
 
+  function formatGap(ms?: number | null): string {
+    if (ms == null) {
+      return "--";
+    }
+    if (ms === 0) {
+      return "LEADER";
+    }
+    const sign = ms < 0 ? "-" : "+";
+    return `${sign}${formatLap(Math.abs(ms))}`;
+  }
+
 export function DriverInspectorPage() {
   const navigate = useNavigate();
   const { activeSession, tower, selectedDriver, setSelectedDriver } = useReplay();
@@ -68,11 +79,14 @@ export function DriverInspectorPage() {
                 </div>
                 <div className="metric-card">
                   <span className="metric-label">Gap To Leader</span>
-                  <span className="metric-value">{focusDriver.gap_to_leader_ms ?? "--"} ms</span>
+                  <span className="metric-value">{formatGap(focusDriver.gap_to_leader_ms)}</span>
                 </div>
                 <div className="metric-card">
                   <span className="metric-label">Tyre Window</span>
-                  <span className="metric-value">{focusDriver.tyre_compound || "--"} · {focusDriver.tyre_age ?? 0} laps</span>
+                  <span className="metric-value">
+                    {focusDriver.tyre_compound || "--"}
+                    {focusDriver.tyre_age != null ? ` · ${focusDriver.tyre_age} laps` : ""}
+                  </span>
                 </div>
               </div>
             </>

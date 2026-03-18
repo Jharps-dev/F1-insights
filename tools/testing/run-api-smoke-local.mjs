@@ -4,6 +4,7 @@ const HTTP_BASE = process.env.SMOKE_HTTP_BASE || "http://localhost:3000";
 const HEALTH_PATH = process.env.SMOKE_HEALTH_PATH || "/health";
 const SERVER_START_TIMEOUT_MS = Number(process.env.SMOKE_SERVER_START_TIMEOUT_MS || 60000);
 const HEALTH_POLL_MS = Number(process.env.SMOKE_HEALTH_POLL_MS || 500);
+const HEALTH_PROBE_TIMEOUT_MS = Number(process.env.SMOKE_HEALTH_PROBE_TIMEOUT_MS || 1500);
 
 function isWindows() {
   return process.platform === "win32";
@@ -55,6 +56,24 @@ async function waitForHealth() {
   throw new Error(`Timed out waiting for API gateway health at ${url}`);
 }
 
+async function isHealthyNow() {
+  const url = `${HTTP_BASE}${HEALTH_PATH}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), HEALTH_PROBE_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      return false;
+    }
+    const body = await response.json().catch(() => null);
+    return !body || body.status === "ok";
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function killProcessTree(child) {
   if (!child || child.killed) {
     return;
@@ -76,6 +95,18 @@ function killProcessTree(child) {
 
 async function main() {
   const pnpm = pnpmCommand();
+  const useExistingGateway = await isHealthyNow();
+
+  if (useExistingGateway) {
+    await run(pnpm, [
+      "--filter",
+      "@f1-insights/api-gateway",
+      "exec",
+      "node",
+      "./tools/api-ws-smoke.mjs",
+    ]);
+    return;
+  }
 
   const server = spawn(
     pnpm,

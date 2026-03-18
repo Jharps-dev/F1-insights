@@ -24,17 +24,29 @@ function formatAge(timestamp?: string): string {
 }
 
 export function DiagnosticsPage() {
-  const { backendHttp, activeSession, connected, liveStatus, replayStatus, refreshLiveStatus } = useReplay();
+  const { backendHttp, activeSession, connected, liveStatus, liveError, sessionsError, layoutError, replayStatus, refreshLiveStatus } = useReplay();
   const [replayBackendStatus, setReplayBackendStatus] = useState<ReplayBackendStatus | null>(null);
+  const [backendStatusError, setBackendStatusError] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshLiveStatus();
 
     function fetchBackendStatus() {
       fetch(`${backendHttp}/api/replay/status`)
-        .then((response) => (response.ok ? response.json() : null))
-        .then((data: ReplayBackendStatus | null) => setReplayBackendStatus(data))
-        .catch(() => setReplayBackendStatus(null));
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Replay status unavailable (${response.status})`);
+          }
+          return response.json();
+        })
+        .then((data: ReplayBackendStatus) => {
+          setReplayBackendStatus(data);
+          setBackendStatusError(null);
+        })
+        .catch((err) => {
+          setReplayBackendStatus(null);
+          setBackendStatusError(err instanceof Error ? err.message : "Replay status request failed");
+        });
     }
 
     fetchBackendStatus();
@@ -100,6 +112,7 @@ export function DiagnosticsPage() {
             Last source message: {formatAge(liveStatus?.lastMessageAtUtc)}
           </div>
           {liveStatus?.lastError ? <div className="diagnostics-error">{liveStatus.lastError}</div> : null}
+          {liveError ? <div className="diagnostics-error">{liveError}</div> : null}
         </section>
 
         <section className="inspector-card">
@@ -126,6 +139,9 @@ export function DiagnosticsPage() {
               <span className="list-row-meta">{replayBackendStatus?.clock?.paused ? "Yes" : "No"}</span>
             </div>
           </div>
+          {backendStatusError ? <div className="diagnostics-error">{backendStatusError}</div> : null}
+          {sessionsError ? <div className="diagnostics-error">Sessions: {sessionsError}</div> : null}
+          {layoutError ? <div className="diagnostics-error">Layout: {layoutError}</div> : null}
         </section>
       </div>
     </div>

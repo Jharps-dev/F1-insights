@@ -124,6 +124,9 @@ interface SeasonGroup {
 }
 
 const layoutCache = new Map<number, LayoutPoint[] | null>();
+const PREVIEW_BACKEND_HTTP =
+  (import.meta.env.VITE_BACKEND_ORIGIN as string | undefined) ||
+  (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000");
 
 function sampleLayoutPoints(points: LayoutPoint[], targetPoints = 240): LayoutPoint[] {
   if (!Array.isArray(points) || points.length === 0) {
@@ -220,6 +223,7 @@ function CircuitTrackPreview({ sessionKeys, title }: { sessionKeys: number[]; ti
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     const candidates = sessionKeys.slice(0, 10);
 
     async function loadFirstAvailable(): Promise<void> {
@@ -239,7 +243,9 @@ function CircuitTrackPreview({ sessionKeys, title }: { sessionKeys: number[]; ti
         }
 
         try {
-          const response = await fetch(`/api/sessions/${key}/layout`);
+          const response = await fetch(`${PREVIEW_BACKEND_HTTP}/api/sessions/${key}/layout`, {
+            signal: controller.signal,
+          });
           if (!response.ok) {
             layoutCache.set(key, null);
             continue;
@@ -255,6 +261,9 @@ function CircuitTrackPreview({ sessionKeys, title }: { sessionKeys: number[]; ti
             return;
           }
         } catch {
+          if (controller.signal.aborted) {
+            return;
+          }
           layoutCache.set(key, null);
         }
       }
@@ -269,6 +278,7 @@ function CircuitTrackPreview({ sessionKeys, title }: { sessionKeys: number[]; ti
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [sessionKeys]);
 

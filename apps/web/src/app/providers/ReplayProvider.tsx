@@ -14,13 +14,16 @@ interface ReplayContextValue {
   backendHttp: string;
   sessions: SessionManifest[];
   sessionsLoading: boolean;
+  sessionsError: string | null;
   activeSession: SessionManifest | null;
   layout: LayoutPoint[] | null;
   layoutLoading: boolean;
+  layoutError: string | null;
   connected: boolean;
   isPlaying: boolean;
   replayStatus: ReplayStatus;
   sessionError: string | null;
+  liveError: string | null;
   lastStateUpdateAt: number | null;
   tower: TowerState | null;
   stints: StintState[];
@@ -49,11 +52,13 @@ const ReplayContext = createContext<ReplayContextValue | null>(null);
 
 function getBackendBase(): { http: string; ws: string } {
   const env = import.meta.env as Record<string, string | undefined>;
-  const httpOrigin = env.VITE_BACKEND_ORIGIN || window.location.origin;
+  const browserHttpOrigin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+  const httpOrigin = env.VITE_BACKEND_ORIGIN || browserHttpOrigin;
   const wsUrlFromEnv = env.VITE_BACKEND_WS_URL;
   const wsPath = env.VITE_BACKEND_WS_PATH || "/ws";
-  const wsProto = window.location.protocol === "https:" ? "wss" : "ws";
-  const sameOriginWs = `${wsProto}://${window.location.host}${wsPath}`;
+  const wsProto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
+  const wsHost = typeof window !== "undefined" ? window.location.host : "localhost:3000";
+  const sameOriginWs = `${wsProto}://${wsHost}${wsPath}`;
   return {
     http: httpOrigin,
     ws: wsUrlFromEnv || sameOriginWs,
@@ -64,9 +69,11 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
   const { http: backendHttp, ws: backendWs } = getBackendBase();
   const [sessions, setSessions] = useState<SessionManifest[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<SessionManifest | null>(null);
   const [layout, setLayout] = useState<LayoutPoint[] | null>(null);
   const [layoutLoading, setLayoutLoading] = useState(false);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [replayStatus, setReplayStatus] = useState<ReplayStatus>({
@@ -82,30 +89,49 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
   const [raceControl, setRaceControl] = useState<RaceControlMessage[]>([]);
   const [selectedDriver, setSelectedDriver] = useState<number | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
   const [liveBusy, setLiveBusy] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   // Deferred session key from URL navigation before sessions list loaded.
   const pendingSessionKeyRef = useRef<number | null>(null);
+  const layoutRequestIdRef = useRef(0);
 
   useEffect(() => {
+    const controller = new AbortController();
     setSessionsLoading(true);
-    fetch(`${backendHttp}/api/sessions`)
-      .then((response) => (response.ok ? response.json() : []))
+    setSessionsError(null);
+    fetch(`${backendHttp}/api/sessions`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to load sessions (${response.status})`);
+        }
+        return response.json();
+      })
       .then((data: SessionManifest[]) => setSessions(data))
-      .catch(() => setSessions([]))
+      .catch((err) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setSessions([]);
+        setSessionsError(err instanceof Error ? err.message : "Failed to load sessions");
+      })
       .finally(() => setSessionsLoading(false));
+
+    return () => controller.abort();
   }, [backendHttp]);
 
   const refreshLiveStatus = useCallback(async () => {
     try {
       const response = await fetch(`${backendHttp}/api/live/status`);
       if (!response.ok) {
+        setLiveError(`Live status unavailable (${response.status})`);
         return;
       }
       const status = (await response.json()) as LiveStatus;
       setLiveStatus(status);
+      setLiveError(null);
     } catch {
-      // ignore transient polling issues
+      setLiveError("Live status request failed");
     }
   }, [backendHttp]);
 
@@ -130,12 +156,34 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
       setActiveSession(session);
       setLayout(null);
       setLiveStatus(null);
+      setLayoutError(null);
       setLayoutLoading(true);
+      const requestId = ++layoutRequestIdRef.current;
       fetch(`${backendHttp}/api/sessions/${session.session_key}/layout`)
-        .then((response) => (response.ok ? response.json() : null))
-        .then((points: LayoutPoint[] | null) => setLayout(points))
-        .catch(() => setLayout(null))
-        .finally(() => setLayoutLoading(false));
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to load layout (${response.status})`);
+          }
+          return response.json();
+        })
+        .then((points: LayoutPoint[] | null) => {
+          if (layoutRequestIdRef.current !== requestId) {
+            return;
+          }
+          setLayout(points);
+        })
+        .catch((err) => {
+          if (layoutRequestIdRef.current !== requestId) {
+            return;
+          }
+          setLayout(null);
+          setLayoutError(err instanceof Error ? err.message : "Failed to load layout");
+        })
+        .finally(() => {
+          if (layoutRequestIdRef.current === requestId) {
+            setLayoutLoading(false);
+          }
+        });
     },
     [backendHttp, resetReplayState]
   );
@@ -191,6 +239,7 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
   }, [buildFallbackSession, sessions, sessionsLoading, selectSession]);
 
   const clearActiveSession = useCallback(() => {
+    pendingSessionKeyRef.current = null;
     resetReplayState();
     setActiveSession(null);
     setLayout(null);
@@ -206,11 +255,13 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     wsRef.current = ws;
     ws.onopen = () => {
       setConnected(true);
+      setSessionError(null);
       ws.send(JSON.stringify({ op: "load_session", sessionKey: activeSession.session_key }));
     };
     ws.onmessage = (event) => {
       try {
-        const message = JSON.parse(event.data as string);
+        const rawData = typeof event.data === "string" ? event.data : "";
+        const message = JSON.parse(rawData);
         if (message.type === "session_loaded") {
           // State (tower, stints, insights, raceControl) was already populated by the
           // initial emitSnapshot() inside loadSession() -- before this message
@@ -259,9 +310,12 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
         // ignore malformed messages
       }
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       setConnected(false);
       setIsPlaying(false);
+      if (event.code !== 1000) {
+        setSessionError("WebSocket disconnected unexpectedly");
+      }
     };
     return () => {
       ws.close();
@@ -338,11 +392,18 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
     }
     setLiveBusy(true);
     try {
-      await fetch(`${backendHttp}/api/live/start`, {
+      const response = await fetch(`${backendHttp}/api/live/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionKey: activeSession.session_key }),
       });
+      if (!response.ok) {
+        setLiveError(`Failed to start live mode (${response.status})`);
+      } else {
+        setLiveError(null);
+      }
+    } catch {
+      setLiveError("Live start request failed");
     } finally {
       setLiveBusy(false);
       void refreshLiveStatus();
@@ -352,7 +413,14 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
   const stopLive = useCallback(async () => {
     setLiveBusy(true);
     try {
-      await fetch(`${backendHttp}/api/live/stop`, { method: "POST" });
+      const response = await fetch(`${backendHttp}/api/live/stop`, { method: "POST" });
+      if (!response.ok) {
+        setLiveError(`Failed to stop live mode (${response.status})`);
+      } else {
+        setLiveError(null);
+      }
+    } catch {
+      setLiveError("Live stop request failed");
     } finally {
       setLiveBusy(false);
       void refreshLiveStatus();
@@ -365,13 +433,16 @@ export function ReplayProvider({ children }: { children: React.ReactNode }) {
         backendHttp,
         sessions,
         sessionsLoading,
+        sessionsError,
         activeSession,
         layout,
         layoutLoading,
+        layoutError,
         connected,
         isPlaying,
         replayStatus,
         sessionError,
+        liveError,
         lastStateUpdateAt,
         tower,
         stints,

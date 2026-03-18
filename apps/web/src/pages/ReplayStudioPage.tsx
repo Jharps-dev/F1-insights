@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PlaybackBar } from "../components/PlaybackBar";
 import { RaceControlFeed } from "../components/RaceControlFeed";
@@ -43,6 +43,8 @@ export function ReplayStudioPage() {
     setSelectedDriver,
     replayStatus,
     sessionError,
+    sessionsError,
+    layoutError,
     connected,
     isPlaying,
     liveStatus,
@@ -61,12 +63,48 @@ export function ReplayStudioPage() {
     stopLive,
   } = useReplay();
   const mainRef = useRef<HTMLElement | null>(null);
-  const [rightPaneWidth, setRightPaneWidth] = useState(560);
+  const [rightPaneWidth, setRightPaneWidth] = useState(() => {
+    if (typeof window === "undefined") {
+      return 560;
+    }
 
-  const canResize = useMemo(() => window.matchMedia("(min-width: 1101px)").matches, []);
+    try {
+      const raw = window.localStorage.getItem("replay-right-pane-width");
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed >= 420 ? parsed : 560;
+    } catch {
+      return 560;
+    }
+  });
+  const [canResize, setCanResize] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.matchMedia("(min-width: 1101px)").matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const media = window.matchMedia("(min-width: 1101px)");
+    const onChange = () => setCanResize(media.matches);
+    onChange();
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("replay-right-pane-width", String(Math.floor(rightPaneWidth)));
+    } catch {
+      // Best effort only.
+    }
+  }, [rightPaneWidth]);
 
   const onSplitterMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!canResize) {
+    if (!canResize || event.button !== 0) {
       return;
     }
 
@@ -134,6 +172,10 @@ export function ReplayStudioPage() {
   // Tick every second so the stale badge re-evaluates without needing a WS message.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
     const id = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(id);
   }, []);
@@ -217,6 +259,16 @@ export function ReplayStudioPage() {
           onMouseDown={onSplitterMouseDown}
         />
         <section className="replay-right">
+          {sessionsError ? (
+            <div className="replay-error-banner" role="alert">
+              Sessions error: {sessionsError}
+            </div>
+          ) : null}
+          {layoutError ? (
+            <div className="replay-error-banner" role="alert">
+              Layout error: {layoutError}
+            </div>
+          ) : null}
           {sessionError ? (
             <div className="replay-error-banner" role="alert">
               Replay error: {sessionError}
