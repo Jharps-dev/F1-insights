@@ -1456,10 +1456,30 @@ code { font-family: var(--mono); }
 }
 
 .replay-right {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 220px);
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+.replay-right-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  flex-shrink: 0;
+}
+
+.replay-right-panels {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.7fr) minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.replay-right-panels > * {
+  min-height: 0;
 }
 
 .replay-splitter {
@@ -1673,6 +1693,8 @@ code { font-family: var(--mono); }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.1) transparent;
 }
@@ -1835,6 +1857,8 @@ code { font-family: var(--mono); }
   padding: 8px;
   overflow-y: auto;
   min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .radio-item {
@@ -1892,6 +1916,8 @@ code { font-family: var(--mono); }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 8px;
   display: flex;
   flex-direction: column;

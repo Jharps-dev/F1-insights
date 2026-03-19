@@ -304,24 +304,30 @@ export function ReplayStudioPage() {
           onMouseDown={onSplitterMouseDown}
         />
         <section className="replay-right">
-          {sessionsError ? (
-            <div className="replay-error-banner" role="alert">
-              Sessions error: {sessionsError}
+          {sessionsError || layoutError || sessionError ? (
+            <div className="replay-right-errors">
+              {sessionsError ? (
+                <div className="replay-error-banner" role="alert">
+                  Sessions error: {sessionsError}
+                </div>
+              ) : null}
+              {layoutError ? (
+                <div className="replay-error-banner" role="alert">
+                  Layout error: {layoutError}
+                </div>
+              ) : null}
+              {sessionError ? (
+                <div className="replay-error-banner" role="alert">
+                  Replay error: {sessionError}
+                </div>
+              ) : null}
             </div>
           ) : null}
-          {layoutError ? (
-            <div className="replay-error-banner" role="alert">
-              Layout error: {layoutError}
-            </div>
-          ) : null}
-          {sessionError ? (
-            <div className="replay-error-banner" role="alert">
-              Replay error: {sessionError}
-            </div>
-          ) : null}
-          <TimingTower tower={tower} selectedDriver={selectedDriver} onSelectDriver={setSelectedDriver} />
-          <TeamRadioFeed radios={radios} selectedDriver={selectedDriver} />
-          <RaceControlFeed messages={raceControl} />
+          <div className="replay-right-panels">
+            <TimingTower tower={tower} selectedDriver={selectedDriver} onSelectDriver={setSelectedDriver} />
+            <TeamRadioFeed radios={radios} selectedDriver={selectedDriver} />
+            <RaceControlFeed messages={raceControl} />
+          </div>
         </section>
       </main>
 
